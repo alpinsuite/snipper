@@ -556,6 +556,60 @@ abstract class AppLocalizations {
   /// **'Remove All Marks'**
   String get actionClearAnnotations;
 
+  /// No description provided for @settingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get settingsTitle;
+
+  /// No description provided for @settingGlobalHotkey.
+  ///
+  /// In en, this message translates to:
+  /// **'Global hotkey'**
+  String get settingGlobalHotkey;
+
+  /// No description provided for @settingHotkeyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Click the field and press the combination you want.'**
+  String get settingHotkeyHint;
+
+  /// No description provided for @settingHotkeyListening.
+  ///
+  /// In en, this message translates to:
+  /// **'Press a combination...'**
+  String get settingHotkeyListening;
+
+  /// No description provided for @settingHotkeyOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get settingHotkeyOff;
+
+  /// No description provided for @settingHotkeyClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn Off'**
+  String get settingHotkeyClear;
+
+  /// No description provided for @settingHotkeyUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'An application cannot take a system-wide key on Linux. Bind a desktop shortcut to `snipper --region` instead.'**
+  String get settingHotkeyUnsupported;
+
+  /// No description provided for @hotkeyAlreadyTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'Something else on this machine already uses that combination.'**
+  String get hotkeyAlreadyTaken;
+
+  /// No description provided for @hotkeyRefused.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows would not take that combination.'**
+  String get hotkeyRefused;
+
   /// No description provided for @statusReady.
   ///
   /// In en, this message translates to:

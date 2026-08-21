@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../controller/capture_controller.dart';
+import '../controller/capture_runner.dart';
 import '../controller/shot_controller.dart';
 import '../core/settings_controller.dart';
 import '../io/clipboard_service.dart';
@@ -17,6 +18,7 @@ import '../ops/encode.dart';
 import '../ops/flatten.dart';
 import 'dialogs.dart';
 import 'labels.dart';
+import 'settings_dialog.dart';
 
 /// Every user command, implemented exactly once.
 ///
@@ -52,28 +54,11 @@ class AppActions {
     // which unmounts the button or menu item this was called from — and a
     // `context.read` on a deactivated element throws rather than returning the
     // controller, so the snip would be taken and then quietly dropped.
-    final captures = _captures;
-    final shot = _shot;
-    final settings = _settings;
-    final delay = Duration(seconds: settings.delaySeconds);
-
-    final snip = await captures.capture(
-      CaptureRequest(mode: mode, delay: delay),
-    );
-    if (snip == null) return;
-    shot.open(snip);
-
-    // The overwhelmingly common next action after taking a screenshot is
-    // pasting it somewhere, so unless it has been turned off, it is already on
-    // the clipboard by the time the window comes back.
-    // A fresh snip has no marks on it yet, so there is nothing to flatten --
-    // but it goes through the same call anyway, so there is one route to the
-    // clipboard rather than two that could diverge.
-    if (settings.copyOnCapture) {
-      await ClipboardService.writePng(
-        await Encode.encode(await _flattened(shot), SnipFormat.png),
-      );
-    }
+    //
+    // The work itself is CaptureRunner's, because the hotkey and the command
+    // line ask for the same thing from outside the widget tree and there is no
+    // BuildContext to reach this class through from either.
+    await context.read<CaptureRunner>().run(mode);
   }
 
   void cancelCapture() => _captures.cancel();
@@ -131,6 +116,8 @@ class AppActions {
 
   Future<void> setCopyOnCapture(bool value) =>
       _settings.setCopyOnCapture(value);
+
+  void showSettings() => showSettingsDialog(context);
 
   void showAbout() => showAboutSnipperDialog(context);
 

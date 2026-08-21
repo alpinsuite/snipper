@@ -88,6 +88,11 @@ class AppMenuBar extends StatelessWidget {
         onPressed: () =>
             fireAndForget(actions.setCopyOnCapture(!settings.copyOnCapture)),
       ),
+      const SlateMenuSeparator(),
+      SlateMenuItem(
+        label: l10n.actionSettings,
+        onPressed: actions.showSettings,
+      ),
     ];
   }
 

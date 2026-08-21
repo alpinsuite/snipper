@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../model/capture_request.dart';
+import '../model/hotkey_binding.dart';
 
 /// Preferences that outlive a session.
 ///
@@ -15,6 +16,8 @@ class SettingsController extends ChangeNotifier {
 
   static const _keyThemeMode = 'theme_mode';
   static const _keyCaptureMode = 'capture_mode';
+  static const _keyHotkey = 'global_hotkey';
+  static const _keyHotkeyEnabled = 'global_hotkey_enabled';
   static const _keyDelaySeconds = 'capture_delay_seconds';
   static const _keyCopyOnCapture = 'copy_on_capture';
   static const _keySaveFolder = 'save_folder';
@@ -76,6 +79,28 @@ class SettingsController extends ChangeNotifier {
 
   Future<void> setCopyOnCapture(bool value) async {
     await _prefs.setBool(_keyCopyOnCapture, value);
+    notifyListeners();
+  }
+
+  /// The system-wide binding, or null when it has been turned off.
+  ///
+  /// Stored as its own label, so what is shown in the settings dialog and what
+  /// is in the preferences file are the same string. Anything unparseable —
+  /// a file from a future version, or edited by hand — falls back to the
+  /// default rather than stopping the application from starting.
+  HotkeyBinding? get hotkey {
+    if (_prefs.getBool(_keyHotkeyEnabled) == false) return null;
+    return HotkeyBinding.parse(_prefs.getString(_keyHotkey)) ??
+        HotkeyBinding.defaultBinding;
+  }
+
+  Future<void> setHotkey(HotkeyBinding? binding) async {
+    if (binding == null) {
+      await _prefs.setBool(_keyHotkeyEnabled, false);
+    } else {
+      await _prefs.setBool(_keyHotkeyEnabled, true);
+      await _prefs.setString(_keyHotkey, binding.label);
+    }
     notifyListeners();
   }
 

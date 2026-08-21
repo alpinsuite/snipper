@@ -253,5 +253,35 @@ class AppLocalizationsEn extends AppLocalizations {
   String get actionClearAnnotations => 'Remove All Marks';
 
   @override
+  String get settingsTitle => 'Settings';
+
+  @override
+  String get settingGlobalHotkey => 'Global hotkey';
+
+  @override
+  String get settingHotkeyHint =>
+      'Click the field and press the combination you want.';
+
+  @override
+  String get settingHotkeyListening => 'Press a combination...';
+
+  @override
+  String get settingHotkeyOff => 'Off';
+
+  @override
+  String get settingHotkeyClear => 'Turn Off';
+
+  @override
+  String get settingHotkeyUnsupported =>
+      'An application cannot take a system-wide key on Linux. Bind a desktop shortcut to `snipper --region` instead.';
+
+  @override
+  String get hotkeyAlreadyTaken =>
+      'Something else on this machine already uses that combination.';
+
+  @override
+  String get hotkeyRefused => 'Windows would not take that combination.';
+
+  @override
   String get statusReady => 'Ready';
 }

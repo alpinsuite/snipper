@@ -120,5 +120,15 @@
 
   "actionClearAnnotations": "Remove All Marks",
 
+  "settingsTitle": "Settings",
+  "settingGlobalHotkey": "Global hotkey",
+  "settingHotkeyHint": "Click the field and press the combination you want.",
+  "settingHotkeyListening": "Press a combination...",
+  "settingHotkeyOff": "Off",
+  "settingHotkeyClear": "Turn Off",
+  "settingHotkeyUnsupported": "An application cannot take a system-wide key on Linux. Bind a desktop shortcut to `snipper --region` instead.",
+  "hotkeyAlreadyTaken": "Something else on this machine already uses that combination.",
+  "hotkeyRefused": "Windows would not take that combination.",
+
   "statusReady": "Ready"
 }
