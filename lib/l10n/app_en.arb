@@ -1,0 +1,124 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "Snipper",
+  "@appTitle": {
+    "description": "Application name, shown in the window title and About dialog"
+  },
+  "appTagline": "Screen capture and annotation",
+
+  "windowMinimize": "Minimise",
+  "windowMaximize": "Maximise",
+  "windowRestore": "Restore",
+  "windowClose": "Close",
+
+  "menuFile": "File",
+  "menuEdit": "Edit",
+  "menuCapture": "Capture",
+  "menuView": "View",
+  "menuHelp": "Help",
+  "menuTheme": "Theme",
+
+  "themeSystem": "Match System",
+  "themeLight": "Light",
+  "themeDark": "Dark",
+
+  "actionNewSnip": "New Snip",
+  "actionCaptureRegion": "Capture Region",
+  "actionCaptureFullScreen": "Capture Full Screen",
+  "actionSave": "Save As...",
+  "actionCopy": "Copy",
+  "actionUndo": "Undo",
+  "actionRedo": "Redo",
+  "actionDelete": "Delete",
+  "actionSelectAll": "Select All",
+  "actionCancel": "Cancel",
+  "actionClose": "Close",
+  "actionQuit": "Quit",
+  "actionSettings": "Settings...",
+  "actionAbout": "About Snipper",
+
+  "keyCtrl": "Ctrl",
+  "@keyCtrl": {
+    "description": "Modifier key name as shown in a menu's shortcut column"
+  },
+  "keyShift": "Shift",
+  "keyAlt": "Alt",
+  "keyDelete": "Del",
+  "keyEscape": "Esc",
+  "keyPrintScreen": "PrtSc",
+
+  "emptyTitle": "Nothing captured yet",
+  "emptyBody": "Choose a mode and take a snip. The screen freezes while you drag out the region.",
+
+  "aboutVersion": "Version {version}",
+  "@aboutVersion": {
+    "description": "Version line in the About dialog",
+    "placeholders": { "version": { "type": "String" } }
+  },
+  "aboutBlurb": "A screen capture and annotation tool for the Windows and Linux desktop.",
+
+  "overlayHint": "Drag to select a region. Esc or right-click to cancel.",
+  "captureFailed": "Could not take the screenshot",
+
+  "captureNew": "New",
+  "captureDelay": "Delay",
+  "delayNone": "No delay",
+  "delaySeconds": "{seconds}s",
+  "@delaySeconds": {
+    "description": "A capture delay, as shown in the delay chooser",
+    "placeholders": { "seconds": { "type": "int" } }
+  },
+  "modeRegion": "Region",
+  "modeFullScreen": "Full Screen",
+  "armingIn": "Capturing in {seconds}...",
+  "@armingIn": {
+    "description": "Countdown shown while a delayed capture waits",
+    "placeholders": { "seconds": { "type": "int" } }
+  },
+  "snipSize": "{width} x {height}",
+  "@snipSize": {
+    "description": "The dimensions of the captured image, in the status bar",
+    "placeholders": { "width": { "type": "int" }, "height": { "type": "int" } }
+  },
+
+  "formatPng": "PNG image",
+  "formatJpeg": "JPEG image",
+  "saveTitle": "Save snip",
+  "saved": "Saved to {name}",
+  "@saved": {
+    "description": "Confirmation after writing a snip to disk",
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "saveFailed": "Could not save the image",
+  "copied": "Copied to the clipboard",
+  "copyFailed": "The clipboard would not take the image",
+
+  "settingCopyOnCapture": "Copy Every Snip to the Clipboard",
+
+  "toolSelect": "Select",
+  "toolPen": "Pen",
+  "toolHighlighter": "Highlighter",
+  "toolArrow": "Arrow",
+  "toolLine": "Line",
+  "toolRectangle": "Rectangle",
+  "toolEllipse": "Ellipse",
+  "toolRedact": "Redact",
+  "toolStep": "Step Number",
+  "toolText": "Text",
+
+  "optionColour": "Colour",
+  "optionRecentColours": "Recent",
+  "optionWidth": "Width",
+  "optionStrength": "Strength",
+  "optionSize": "Size",
+  "optionFilled": "Filled",
+
+  "redactBlur": "Blur",
+  "redactPixelate": "Pixelate",
+  "redactSolid": "Solid",
+
+  "actionClearAnnotations": "Remove All Marks",
+
+  "statusReady": "Ready"
+}
