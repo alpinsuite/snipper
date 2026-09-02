@@ -37,6 +37,14 @@ Step 'layer purity' { powershell -File tools/check_layer_purity.ps1 }
 Step 'hardcoded strings' { powershell -File tools/check_hardcoded_strings.ps1 }
 Step 'flutter test' { flutter test }
 
+# The SBOM is a release gate (SPEC.md 3.7), so it is a check, not a build
+# step: generate it, then assert it accounts for every package in the
+# lockfile. Runs last because it is the only step that reaches the network.
+Step 'sbom' {
+  powershell -File tools/sbom.ps1
+  if ($LASTEXITCODE -eq 0) { powershell -File tools/sbom.ps1 -Check }
+}
+
 if ($failed.Count -gt 0) {
   Write-Host ''
   Write-Host 'Failed:' -ForegroundColor Red
