@@ -32,10 +32,6 @@ dependencies:
   win32: ^6.4.0
   # The X11 screen capture on Linux, also through dart:ffi.
   ffi: ^2.2.0
-  # The XDG desktop portal on Wayland, where X11 is not reachable. Pure Dart —
-  # it speaks the wire protocol over the session socket, so nothing is built.
-  dbus: ^0.7.14
-
   # JPEG encoding on export. PNG comes out of dart:ui directly; this is for the
   # formats it cannot write.
   image: ^4.9.1
