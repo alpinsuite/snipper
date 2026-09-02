@@ -122,9 +122,13 @@ class _WindowBarState extends State<WindowBar> with WindowListener {
 ///
 /// Drawn rather than shipped as an asset, for the same reason the kit's icons
 /// are: it takes its colour from the theme, and there is no image file to keep
-/// in step with the palette. The proportions match the launcher icon that
-/// `tools/make_icons.dart` generates, so the title bar and the taskbar show the
-/// same mark rather than two that resemble each other.
+/// in step with the palette.
+///
+/// The geometry is the kit's `SlateIcons.regionSelect` rather than the brand
+/// tile that `tools/make_icons.dart` generates, and stays that way on purpose:
+/// this sits in a row of kit icons and has to match its neighbours more than it
+/// has to match the taskbar. Same four brackets either way -- the tile rounds
+/// its joins and adds edge ticks it has the room for.
 class _Mark extends StatelessWidget {
   const _Mark({required this.color});
 
