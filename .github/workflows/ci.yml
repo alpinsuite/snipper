@@ -109,7 +109,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config \
                                   libgtk-3-dev liblzma-dev \
-                                  xvfb x11-xserver-utils
+                                  xvfb x11-xserver-utils x11-apps
 
       - run: flutter pub get
 
@@ -123,6 +123,9 @@ jobs:
         run: |
           xvfb-run -a -s "-screen 0 1600x900x24" bash -c '
             xsetroot -solid "#336699"
+            # What the X server itself says the last pixel of the root is, in
+            # BGRX. If this is not 99 66 33 the test below is not at fault.
+            xwd -root -silent | tail -c 4 | od -An -tx1
             flutter test integration_test/linux_capture_test.dart -d linux \
               --dart-define=SNIPPER_SCREEN=1600x900 \
               --dart-define=SNIPPER_ROOT_COLOUR=3368601
