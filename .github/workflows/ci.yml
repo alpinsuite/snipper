@@ -1,0 +1,174 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # The version this project is developed and tested against. A green local run
+  # only means a green CI run if these are the same number.
+  FLUTTER_VERSION: 3.44.8
+
+jobs:
+  analyze:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # Committed on purpose, so this can check they are not stale. A generated
+      # file that drifts from its ARB is a translation that silently never
+      # reaches the interface.
+      - name: Localizations are current
+        run: |
+          flutter gen-l10n
+          git diff --exit-code lib/l10n/generated
+
+      - run: dart format --set-exit-if-changed .
+      - run: flutter analyze --fatal-infos
+      - run: bash tools/check_hardcoded_strings.sh
+      - run: flutter test
+
+      # Same rule: the icons are generated from one drawing, and an output
+      # edited by hand puts the platforms out of step at the next run.
+      - name: Icons are current
+        run: |
+          dart run tools/make_icons.dart
+          git diff --exit-code windows/runner/resources assets/icon packaging/icons
+
+  build-linux:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Native toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config \
+                                  libgtk-3-dev liblzma-dev
+
+      - run: flutter pub get
+      - run: flutter build linux --release
+
+      # A build that produces no binary still exits zero often enough to be
+      # worth asserting against.
+      - name: The binary exists and runs
+        run: |
+          test -x build/linux/x64/release/bundle/snipper
+          ls -la build/linux/x64/release/bundle/
+
+      - name: The desktop entry is valid
+        run: |
+          sudo apt-get install -y desktop-file-utils
+          desktop-file-validate packaging/snipper.desktop
+
+      - name: Software Bill of Materials
+        # CycloneDX, resolved from pubspec.lock and written in the same job
+        # that produced the binary, so it describes this build rather than
+        # somebody's laptop. --check is the gate: it fails on a missing,
+        # stale, or incomplete SBOM.
+        run: |
+          bash tools/sbom.sh
+          bash tools/sbom.sh --check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snipper-linux-x64
+          path: |
+            build/linux/x64/release/bundle/
+            build/sbom.cdx.json
+
+  package:
+    name: Package (.deb)
+    runs-on: ubuntu-latest
+    # The container the release is built in, by the same digest, so the package
+    # tested here links against the glibc the released one will. See
+    # release.yml for why it is a digest and how to move it.
+    container: ubuntu@sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc   # 22.04
+    steps:
+      - name: Install toolchain
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git jq unzip xz-utils zip file \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+            dpkg-dev desktop-file-utils
+
+      - uses: actions/checkout@v4
+      - run: git config --global --add safe.directory '*'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build linux --release
+      - run: bash packaging/build_deb.sh
+
+      # Installed for real, as root in a throwaway container: this is what
+      # proves the computed Depends resolve on the oldest release supported,
+      # and that every file lands where the desktop entry expects it.
+      - name: The package installs
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ./build/dist/snipper_*_amd64.deb
+          test -x /usr/bin/snipper
+          test -x /usr/lib/snipper/snipper
+          test -f /usr/share/icons/hicolor/256x256/apps/snipper.png
+          test -f /usr/share/metainfo/com.alpinsuite.snipper.metainfo.xml
+          desktop-file-validate /usr/share/applications/snipper.desktop
+          # Every shared library the binary wants is present once the
+          # package's own dependencies are.
+          ! LD_LIBRARY_PATH=/usr/lib/snipper/lib ldd /usr/lib/snipper/snipper | grep "not found"
+          # Asked of dpkg rather than of the disk: the ubuntu image is configured
+          # to drop man pages on install, so the file is rightly not there.
+          dpkg -L snipper | grep -qx /usr/share/man/man1/snipper.1.gz
+
+      - name: The version is written down once
+        run: |
+          VERSION="$(bash tools/set_version.sh)"
+          grep -q "appVersion = '$VERSION'" lib/core/app_version.dart
+          grep -q "<release version=\"$VERSION\"" packaging/com.alpinsuite.snipper.metainfo.xml
+          dpkg-deb -f build/dist/snipper_*_amd64.deb Version | grep -qx "$VERSION"
+
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build windows --release
+
+      - name: The binary exists
+        run: |
+          if (-not (Test-Path build\windows\x64\runner\Release\snipper.exe)) {
+            throw "no executable was produced"
+          }
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snipper-windows-x64
+          path: build/windows/x64/runner/Release/

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.alpinsuite.snipper</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>Snipper</name>
+  <summary>Capture a region or the whole screen, and annotate it</summary>
+  <developer id="systems.buache">
+    <name>Buache Systems</name>
+  </developer>
+
+  <description>
+    <p>
+      Snipper takes a screenshot and opens it in an editor rather than a file:
+      draw a rectangle around what matters, mark it up, then copy it to the
+      clipboard or save it.
+    </p>
+    <ul>
+      <li>Capture a region or the whole screen, with an optional delay</li>
+      <li>Annotate the result before it goes anywhere</li>
+      <li>Bind a desktop shortcut to "snipper --region" or "snipper --full"; add "--clipboard" to copy and quit without opening a window</li>
+      <li>Everything happens on the local machine; the program opens no network connection</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">snipper.desktop</launchable>
+
+  <url type="homepage">https://buache.systems/snipper/</url>
+  <url type="bugtracker">https://github.com/alpinsuite/snipper/issues</url>
+  <url type="vcs-browser">https://github.com/alpinsuite/snipper</url>
+
+  <provides>
+    <binary>snipper</binary>
+  </provides>
+
+  <categories>
+    <category>Graphics</category>
+    <category>Utility</category>
+  </categories>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-09-19">
+      <description>
+        <p>First version.</p>
+      </description>
+    </release>
+  </releases>
+</component>

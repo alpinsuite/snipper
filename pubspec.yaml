@@ -1,0 +1,72 @@
+name: snipper
+description: "A screen capture and annotation tool for the Windows and Linux desktop."
+publish_to: "none"
+
+# Single source of truth for the application version. `tools/set_version.ps1`
+# propagates it to `lib/core/app_version.dart`.
+version: 0.1.0+1
+
+# Matches the toolchain CI pins and the one the kit is developed against.
+environment:
+  sdk: ^3.12.2
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # The widget kit everything is drawn with.
+  #
+  # Taken by path rather than by tag while this application and the kit are
+  # still moving together — the annotation glyphs landed in the kit for this
+  # tool, and pinning now would mean a kit release per glyph. It gets the
+  # sibling treatment (`git:` plus a gitignored `pubspec_overrides.yaml`) at the
+  # first release, which is what gives the interface a version number.
+  slate_ui:
+    git:
+      url: https://github.com/alpinsuite/ui-kit.git
+      ref: v0.9.0
+
+  # Screen capture and overlay placement on Windows: EnumDisplayMonitors and
+  # GDI BitBlt through dart:ffi, so there is no C++ in the capture path.
+  win32: ^6.4.0
+  # The X11 screen capture on Linux, also through dart:ffi.
+  ffi: ^2.2.0
+  # JPEG encoding on export. PNG comes out of dart:ui directly; this is for the
+  # formats it cannot write.
+  image: ^4.9.1
+  # Native save dialogs on both platforms.
+  file_selector: ^1.1.0
+  # Image clipboard. Deliberately chosen over super_clipboard, which needs a
+  # Rust toolchain in CI. It writes images on Windows but not on Linux, where
+  # the application registers its own GTK channel — see lib/io/clipboard.dart.
+  pasteboard: ^0.5.0
+  # The undecorated title bar, the minimum size, and the frameless topmost
+  # window the region overlay is drawn in.
+  window_manager: ^0.5.2
+  # State wiring (ChangeNotifier).
+  provider: ^6.1.5
+  # Settings persistence.
+  shared_preferences: ^2.5.5
+
+  collection: ^1.19.0
+  intl: any
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  # The countdown is a Timer.periodic, and a test that really waited five
+  # seconds for it is a test nobody runs.
+  fake_async: ^1.3.1
+
+flutter:
+  uses-material-design: true
+  generate: true
+  assets:
+    # The application mark, for the About dialog. The platform icons are
+    # separate files that `tools/make_icons.dart` writes from the same drawing.
+    - assets/icon/snipper.png

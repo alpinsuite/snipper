@@ -1,0 +1,48 @@
+.TH SNIPPER 1 "2026" "Snipper" "User Commands"
+.SH NAME
+snipper \- screen capture and annotation
+.SH SYNOPSIS
+.B snipper
+.RB [ \-\-region | \-\-full ]
+.RB [ \-\-clipboard ]
+.RB [ \-\-no\-delay ]
+.SH DESCRIPTION
+.B snipper
+captures a region of the screen or the whole of it, and opens the result in an
+editor where it can be annotated, copied to the clipboard or saved.
+.PP
+Started without a switch it shows its window. The switches exist so that a
+desktop keyboard shortcut can be bound to a capture: an application cannot
+register a system-wide hotkey under Wayland, so the desktop's own shortcut
+editor is pointed at
+.B snipper \-\-region
+instead.
+.SH OPTIONS
+.TP
+.BR \-r ", " \-\-region
+Capture a region chosen by dragging a rectangle.
+.TP
+.BR \-f ", " \-\-full ", " \-\-fullscreen
+Capture the whole screen.
+.TP
+.BR \-c ", " \-\-clipboard
+Put the capture on the clipboard and quit without showing a window. Needs
+.B \-\-region
+or
+.BR \-\-full .
+.TP
+.B \-\-no\-delay
+Ignore the capture delay set in the interface.
+.TP
+.BR \-h ", " \-\-help
+Print the switches and exit.
+.PP
+A switch that is not understood is reported rather than ignored. Arguments that
+are not switches are ignored.
+.SH BUGS
+Report them at
+.UR https://github.com/alpinsuite/snipper/issues
+.UE .
+.SH SEE ALSO
+.UR https://buache.systems/snipper/
+.UE
