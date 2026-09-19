@@ -44,7 +44,7 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Local development against the sibling ui-kit checkout is the default here:
-# pubspec.yaml already takes slate_ui by path. This file is where a
-# dependency_overrides block goes once the pin becomes a git tag.
+# Local development against the sibling ui-kit checkout, through a
+# dependency_overrides block. Ignored so that CI resolves the pinned tag in
+# pubspec.yaml: the dependency that ships is then the one that was tested.
 pubspec_overrides.yaml

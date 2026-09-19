@@ -1,0 +1,231 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)publish, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+  # attest-build-provenance and attest-sbom need an OIDC token to get a
+  # short-lived Sigstore certificate, and write access to the attestations
+  # API to store what they produce.
+  id-token: write
+  attestations: write
+
+env:
+  FLUTTER_VERSION: "3.44.8"
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    # glibc 2.35, so a released binary runs on Ubuntu 22.04+ and Debian 12+
+    # rather than only on the runner's own release.
+    #
+    # Pinned by digest, not by tag. `ubuntu:22.04` floats: the image behind it
+    # is rebuilt, and in a year nobody can reconstruct the environment this
+    # release was built in. To move it, resolve the tag and paste the
+    # manifest-list digest:
+    #   curl -fsSL https://hub.docker.com/v2/repositories/library/ubuntu/tags/22.04 | jq -r .digest
+    container: ubuntu@sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc   # 22.04
+    steps:
+      - name: Install toolchain
+        # jq is needed by subosito/flutter-action's setup script and is not in
+        # the base image; without it the action fails before Flutter is fetched.
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git jq unzip xz-utils zip file gnupg \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+            dpkg-dev desktop-file-utils
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Trust the container's git directories
+        # The job runs as root while the checkout and the Flutter SDK are owned
+        # by other uids, and git refuses to touch either without this. The
+        # container is ephemeral, so the wildcard's scope costs nothing.
+        run: git config --global --add safe.directory '*'
+
+      - name: Read the version and check it matches the tag
+        id: version
+        run: |
+          VERSION="$(bash tools/set_version.sh)"
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "v$VERSION" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match pubspec version $VERSION."
+            echo "::error::Run tools/set_version.sh ${TAG#v} and commit before tagging."
+            exit 1
+          fi
+          echo "releasing $VERSION"
+
+      - name: Refuse to release a capture tool that cannot capture
+        # lib/capture/linux_capture.dart began as a placeholder that throws.
+        # A .deb of that is a screenshot tool that takes no screenshots, and
+        # apt would hand it to everyone. This step deletes itself in effect:
+        # it passes the day the placeholder's message is gone.
+        run: |
+          if grep -q "not wired up yet" lib/capture/linux_capture.dart; then
+            echo "::error::Screen capture on Linux is still a placeholder. Nothing to release."
+            exit 1
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter test
+      - run: flutter build linux --release
+
+      - name: Package
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          desktop-file-validate packaging/snipper.desktop
+          bash packaging/build_deb.sh
+          tar -czf "build/dist/snipper-${VERSION}-linux-x64.tar.gz" \
+            -C build/linux/x64/release/bundle .
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Software Bill of Materials
+        # CycloneDX, resolved from pubspec.lock and written in the same job
+        # that produced the .deb, so it describes this build rather than
+        # somebody's laptop. --check is the gate.
+        env:
+          SBOM_OUT: build/dist/sbom.cdx.json
+        run: |
+          bash tools/sbom.sh
+          bash tools/sbom.sh --check
+
+      - name: Write the release notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Everything between this version's heading and the next one.
+          awk -v version="$VERSION" '
+            $0 ~ "^## \\[" version "\\]" { collecting = 1; next }
+            collecting && /^## \[/ { exit }
+            collecting { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No changelog entry for $VERSION." > release-notes.md
+          fi
+          {
+            echo ""
+            echo "## Install"
+            echo ""
+            echo '```bash'
+            echo "sudo install -d -m 0755 /etc/apt/keyrings"
+            echo "curl -fsSL https://apt.buache.systems/buache-systems-archive-keyring.gpg \\"
+            echo "  | sudo tee /etc/apt/keyrings/buache-systems.gpg > /dev/null"
+            echo "sudo curl -fsSL -o /etc/apt/sources.list.d/buache-systems.sources \\"
+            echo "  https://apt.buache.systems/buache-systems.sources"
+            echo "sudo apt update && sudo apt install snipper"
+            echo '```'
+            echo ""
+            echo "Or download the \`.deb\` below and run \`sudo apt install ./snipper_${VERSION}_amd64.deb\`."
+            echo ""
+            echo "## Verify"
+            echo ""
+            echo "Every file here is listed in \`SHA256SUMS\`, signed with the same key that signs the APT repository:"
+            echo ""
+            echo '```bash'
+            echo "sha256sum -c SHA256SUMS --ignore-missing"
+            echo "gpg --verify SHA256SUMS.asc SHA256SUMS"
+            echo '```'
+            echo ""
+            echo "The packages also carry a signed build provenance attestation, which says which workflow built them and from which commit:"
+            echo ""
+            echo '```bash'
+            echo "gh attestation verify snipper_${VERSION}_amd64.deb --repo ${{ github.repository }}"
+            echo '```'
+          } >> release-notes.md
+          cat release-notes.md
+
+      # --- provenance -------------------------------------------------------
+      - name: Attest the build provenance
+        # A signed in-toto SLSA statement binding each artefact's digest to
+        # this workflow, this repository and this commit. Signed keylessly
+        # through Sigstore, so there is no signing key to store, leak or
+        # rotate, and the record lands in the Rekor transparency log.
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            build/dist/*.deb
+            build/dist/*.tar.gz
+
+      - name: Attest the SBOM
+        # Binds the CycloneDX document to the .deb's digest, so "here is the
+        # bill of materials" and "here is the package" cannot drift apart.
+        uses: actions/attest-sbom@v2
+        with:
+          subject-path: build/dist/*.deb
+          sbom-path: build/dist/sbom.cdx.json
+
+      # --- checksums --------------------------------------------------------
+      - name: Write and sign SHA256SUMS
+        # For the person who downloads a file from the releases page and never
+        # touches apt. apt verifies the repository signature on their behalf;
+        # a direct download has nothing checking it at all. Signed with the
+        # key that signs the APT repository, so there is one fingerprint to
+        # know rather than two.
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          cd build/dist
+          # Basenames only, so the file checks with a plain `sha256sum -c` from
+          # wherever it was downloaded. Written to a temporary name first: a
+          # redirect creates its target before `find` reads the directory, and
+          # SHA256SUMS would otherwise list itself, hashed while empty.
+          rm -f SHA256SUMS SHA256SUMS.asc
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -printf '%P\n' \
+            | sort | xargs --no-run-if-empty sha256sum > sums.tmp
+          test -s sums.tmp   # an empty release is a failed release
+          mv sums.tmp SHA256SUMS
+          cat SHA256SUMS
+
+          if [ -z "${APT_GPG_PRIVATE_KEY:-}" ]; then
+            echo "::warning::APT_GPG_PRIVATE_KEY is not set; SHA256SUMS left unsigned."
+            exit 0
+          fi
+
+          GNUPGHOME="$(mktemp -d)"
+          export GNUPGHOME
+          chmod 700 "$GNUPGHOME"
+          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+          KEY_ID="$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')"
+          GPG_ARGS=(--batch --yes --quiet --local-user "$KEY_ID")
+          if [ -n "${APT_GPG_PASSPHRASE:-}" ]; then
+            GPG_ARGS+=(--pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE")
+          fi
+          gpg "${GPG_ARGS[@]}" --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
+          gpg --batch --yes --verify SHA256SUMS.asc SHA256SUMS
+          echo "signed with $KEY_ID"
+          rm -rf "$GNUPGHOME"
+
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Snipper ${{ steps.version.outputs.version }}
+          body_path: release-notes.md
+          files: build/dist/*
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+
+      # The APT repository is not published from here. alpinsuite/apt rebuilds
+      # itself from this Releases page within the hour and signs the result
+      # there. To publish now: gh workflow run publish.yml -R alpinsuite/apt

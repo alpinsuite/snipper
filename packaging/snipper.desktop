@@ -1,0 +1,28 @@
+[Desktop Entry]
+Type=Application
+Name=Snipper
+GenericName=Screenshot Tool
+Comment=Capture a region or the whole screen, and annotate it
+# Icon is looked up by name in the hicolor theme, so packaging/icons/snipper-<n>.png
+# install to /usr/share/icons/hicolor/<n>x<n>/apps/snipper.png.
+Icon=snipper
+Exec=snipper
+Terminal=false
+Categories=Graphics;Utility;
+Keywords=screenshot;capture;snip;screen;annotate;region;
+# 1.1 rather than 1.5: desktop-file-validate 0.26, which the Ubuntu 22.04
+# packaging container ships, rejects the newer spec version outright.
+Version=1.1
+StartupWMClass=snipper
+# What a desktop's shortcut editor cannot discover on its own. A client cannot
+# register a global hotkey under Wayland, so the binding is made by pointing the
+# desktop's own shortcut at one of these.
+Actions=region;full;
+
+[Desktop Action region]
+Name=Capture a Region
+Exec=snipper --region
+
+[Desktop Action full]
+Name=Capture the Whole Screen
+Exec=snipper --full
