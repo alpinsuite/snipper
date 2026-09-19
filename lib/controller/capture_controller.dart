@@ -80,6 +80,17 @@ class CaptureController extends ChangeNotifier {
 
       _setStage(CaptureStage.capturing);
       await overlay.hideFromCapture();
+
+      if (request.mode == CaptureMode.region && !service.canDrawOwnOverlay) {
+        // Wayland. This application cannot put a window over the desktop
+        // there, so the desktop's own interface runs the selection and what
+        // comes back is already the region. Nothing is frozen and the overlay
+        // is never entered; the `finally` below still gives the window back.
+        final chosen = await service.captureSelectedByDesktop();
+        await overlay.showAfterCapture();
+        return Snip(image: chosen.frame, source: chosen.bounds);
+      }
+
       final result = await service.captureVirtualDesktop();
       // Before anything is drawn: on Windows this clears the
       // exclude-from-capture flag, and leaving it set would make the overlay
@@ -100,6 +111,10 @@ class CaptureController extends ChangeNotifier {
 
       // Completed by [selectRegion] or [cancel], both called by the overlay.
       return await _selection!.future;
+    } on CaptureCancelled {
+      // Backing out of the desktop's selection is the same as pressing Escape
+      // in ours: no snip, and nothing to report.
+      return null;
     } on CaptureException catch (error) {
       _failure = error.message;
       return null;

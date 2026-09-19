@@ -41,6 +41,7 @@ class FakeCaptureService implements CaptureService {
   FakeCaptureService({
     this.bounds = const ui.Rect.fromLTWH(0, 0, 40, 30),
     this.failWith,
+    this.canDrawOwnOverlay = true,
   });
 
   final ui.Rect bounds;
@@ -50,8 +51,23 @@ class FakeCaptureService implements CaptureService {
 
   int captures = 0;
 
+  /// How many times the desktop was asked to run the selection itself.
+  int desktopSelections = 0;
+
   @override
-  bool get canDrawOwnOverlay => true;
+  final bool canDrawOwnOverlay;
+
+  @override
+  Future<CaptureResult> captureSelectedByDesktop() async {
+    desktopSelections++;
+    final failure = failWith;
+    if (failure != null) throw failure;
+    return CaptureResult(
+      frame: await _image(12, 8),
+      bounds: const ui.Rect.fromLTWH(0, 0, 12, 8),
+      desktop: _desktop(),
+    );
+  }
 
   @override
   Future<VirtualDesktop> enumerateDisplays() async => _desktop();
@@ -106,11 +122,16 @@ void main() {
   late FakeCaptureService service;
   late CaptureController controller;
 
-  void build({Object? failWith, ui.Rect? bounds}) {
+  void build({
+    Object? failWith,
+    ui.Rect? bounds,
+    bool canDrawOwnOverlay = true,
+  }) {
     overlay = FakeOverlayWindow();
     service = FakeCaptureService(
       failWith: failWith,
       bounds: bounds ?? const ui.Rect.fromLTWH(0, 0, 40, 30),
+      canDrawOwnOverlay: canDrawOwnOverlay,
     );
     controller = CaptureController(service: service, overlay: overlay);
   }
@@ -222,6 +243,64 @@ void main() {
       expect(await pending, isNull);
       expect(overlay.calls, contains('leave'));
     });
+  });
+
+  // Wayland: the application cannot cover the desktop with its own window, so
+  // the desktop runs the selection and hands back the region.
+  group('region, where the desktop has to select', () {
+    test('the desktop is asked, and the overlay is never entered', () async {
+      build(canDrawOwnOverlay: false);
+
+      final snip = await controller.capture(
+        const CaptureRequest(mode: CaptureMode.region),
+      );
+
+      expect(service.desktopSelections, 1);
+      expect(service.captures, 0);
+      expect(overlay.calls, isNot(contains('enter')));
+      // What came back is the region itself, not a desktop to crop.
+      expect(snip, isNotNull);
+      expect(snip!.width, 12);
+      expect(snip.height, 8);
+      expect(controller.stage, CaptureStage.idle);
+    });
+
+    test('the window is still hidden first and given back after', () async {
+      build(canDrawOwnOverlay: false);
+
+      await controller.capture(const CaptureRequest(mode: CaptureMode.region));
+
+      expect(overlay.calls.first, 'hide');
+      expect(overlay.calls, contains('show'));
+      expect(overlay.calls, contains('leave'));
+    });
+
+    test('closing the selection is a cancel, not a failure', () async {
+      build(canDrawOwnOverlay: false, failWith: const CaptureCancelled());
+
+      final snip = await controller.capture(
+        const CaptureRequest(mode: CaptureMode.region),
+      );
+
+      expect(snip, isNull);
+      expect(controller.failure, isNull);
+      expect(controller.stage, CaptureStage.idle);
+      expect(overlay.calls, contains('leave'));
+    });
+
+    test(
+      'a full-screen capture does not involve the selection at all',
+      () async {
+        build(canDrawOwnOverlay: false);
+
+        await controller.capture(
+          const CaptureRequest(mode: CaptureMode.fullScreen),
+        );
+
+        expect(service.desktopSelections, 0);
+        expect(service.captures, 1);
+      },
+    );
   });
 
   group('failure', () {

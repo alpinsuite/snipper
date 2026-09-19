@@ -24,6 +24,18 @@ class CaptureException implements Exception {
       'CaptureException: $message${cause == null ? '' : ' ($cause)'}';
 }
 
+/// The user backed out of a selection the desktop was running.
+///
+/// Only the portal path can raise it: there the region is chosen in the
+/// desktop's own interface, and closing that is a cancel, not a failure. The
+/// controller ends the capture quietly instead of reporting an error.
+class CaptureCancelled implements Exception {
+  const CaptureCancelled();
+
+  @override
+  String toString() => 'CaptureCancelled';
+}
+
 /// Taking pixels off the screen.
 ///
 /// Two implementations, chosen by platform and never by feature detection at
@@ -55,6 +67,14 @@ abstract class CaptureService {
   /// False under Wayland, where a client cannot position itself and the
   /// compositor has to be asked to do the selection instead.
   bool get canDrawOwnOverlay;
+
+  /// Hands the whole selection to the desktop and returns what the user chose.
+  ///
+  /// The counterpart of [canDrawOwnOverlay] being false, and called only then.
+  /// The frame that comes back is already the region, so there is nothing left
+  /// to crop. Throws [CaptureCancelled] when the user closes the desktop's
+  /// interface without choosing.
+  Future<CaptureResult> captureSelectedByDesktop();
 
   void dispose() {}
 }
