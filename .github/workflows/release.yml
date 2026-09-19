@@ -181,20 +181,25 @@ jobs:
         # a direct download has nothing checking it at all. Signed with the
         # key that signs the APT repository, so there is one fingerprint to
         # know rather than two.
+        # The job runs in a container, where the default shell is sh; the
+        # script below uses arrays.
+        shell: bash
         env:
           APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
           APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
         run: |
           cd build/dist
           # Basenames only, so the file checks with a plain `sha256sum -c` from
-          # wherever it was downloaded. Written to a temporary name first: a
-          # redirect creates its target before `find` reads the directory, and
-          # SHA256SUMS would otherwise list itself, hashed while empty.
+          # wherever it was downloaded. Written outside this directory
+          # first: a redirect creates its target before `find` runs, so a list
+          # written in place would contain a line for itself, hashed while empty.
           rm -f SHA256SUMS SHA256SUMS.asc
+          SUMS_TMP="$(mktemp)"
           find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -printf '%P\n' \
-            | sort | xargs --no-run-if-empty sha256sum > sums.tmp
-          test -s sums.tmp   # an empty release is a failed release
-          mv sums.tmp SHA256SUMS
+            | sort | xargs --no-run-if-empty sha256sum > "$SUMS_TMP"
+          test -s "$SUMS_TMP"   # an empty release is a failed release
+          mv "$SUMS_TMP" SHA256SUMS
+          chmod 644 SHA256SUMS
           cat SHA256SUMS
 
           if [ -z "${APT_GPG_PRIVATE_KEY:-}" ]; then
