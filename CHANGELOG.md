@@ -18,7 +18,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- `slate_ui` is taken from the `v0.7.0` tag of alpinsuite/ui-kit rather than
+- `slate_ui` is taken from the `v0.9.0` tag of alpinsuite/ui-kit rather than
   from a sibling directory, so the build does not depend on what happens to be
   checked out next to it. A gitignored `pubspec_overrides.yaml` restores the
   sibling checkout for local work.

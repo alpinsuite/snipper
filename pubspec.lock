@@ -477,10 +477,12 @@ packages:
   slate_ui:
     dependency: "direct main"
     description:
-      path: "../ui-kit"
-      relative: true
-    source: path
-    version: "0.7.0"
+      path: "."
+      ref: "v0.9.0"
+      resolved-ref: ae4708b03e19fdc09fe18dabcb6ce80396d84410
+      url: "https://github.com/alpinsuite/ui-kit.git"
+    source: git
+    version: "0.9.0"
   source_span:
     dependency: transitive
     description:
