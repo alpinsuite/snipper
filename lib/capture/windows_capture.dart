@@ -29,6 +29,13 @@ class WindowsCaptureService implements CaptureService {
   @override
   bool get canDrawOwnOverlay => true;
 
+  /// Never called: [canDrawOwnOverlay] is true, so the overlay selects.
+  @override
+  Future<CaptureResult> captureSelectedByDesktop() =>
+      throw const CaptureException(
+        'Windows leaves region selection to the application.',
+      );
+
   @override
   Future<VirtualDesktop> enumerateDisplays() async {
     final displays = <Display>[];

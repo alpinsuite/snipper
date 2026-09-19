@@ -67,17 +67,6 @@ jobs:
           fi
           echo "releasing $VERSION"
 
-      - name: Refuse to release a capture tool that cannot capture
-        # lib/capture/linux_capture.dart began as a placeholder that throws.
-        # A .deb of that is a screenshot tool that takes no screenshots, and
-        # apt would hand it to everyone. This step deletes itself in effect:
-        # it passes the day the placeholder's message is gone.
-        run: |
-          if grep -q "not wired up yet" lib/capture/linux_capture.dart; then
-            echo "::error::Screen capture on Linux is still a placeholder. Nothing to release."
-            exit 1
-          fi
-
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}

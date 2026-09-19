@@ -5,6 +5,7 @@
 #include <gdk/gdkx.h>
 #endif
 
+#include "capture_channel.h"
 #include "clipboard_channel.h"
 #include "flutter/generated_plugin_registrant.h"
 
@@ -76,6 +77,7 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
   snipper_clipboard_channel_register(view);
+  snipper_capture_channel_register(view);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
