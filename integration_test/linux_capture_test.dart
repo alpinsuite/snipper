@@ -10,7 +10,7 @@ import 'package:snipper/capture/linux_capture.dart';
 /// CI starts Xvfb at a known size, paints the root window one known colour with
 /// `xsetroot`, and runs this inside it:
 ///
-///   xvfb-run -a -s "-screen 0 1600x900x24" \
+///   xvfb-run -a -s "-screen 0 1600x900x24 -noreset" \
 ///     flutter test integration_test/linux_capture_test.dart -d linux
 ///
 /// That is the whole X11 path end to end — GDK reading the root window, the
@@ -60,20 +60,22 @@ void main() {
         );
         final bytes = data!.buffer.asUint8List();
 
-      // What the screenshot is made of, most common colour first. Printed into
-      // every failure below: "the corner is black" and "the whole frame is
-      // black" are different bugs, and a bare mismatch cannot tell them apart.
-      final histogram = <int, int>{};
-      for (var i = 0; i < bytes.length; i += 4 * 97) {
-        final colour = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
-        histogram[colour] = (histogram[colour] ?? 0) + 1;
-      }
-      final commonest = histogram.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-      final seen = commonest
-          .take(4)
-          .map((e) => '#${e.key.toRadixString(16).padLeft(6, '0')} x${e.value}')
-          .join(', ');
+        // What the screenshot is made of, most common colour first. Printed into
+        // every failure below: "the corner is black" and "the whole frame is
+        // black" are different bugs, and a bare mismatch cannot tell them apart.
+        final histogram = <int, int>{};
+        for (var i = 0; i < bytes.length; i += 4 * 97) {
+          final colour = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+          histogram[colour] = (histogram[colour] ?? 0) + 1;
+        }
+        final commonest = histogram.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        final seen = commonest
+            .take(4)
+            .map(
+              (e) => '#${e.key.toRadixString(16).padLeft(6, '0')} x${e.value}',
+            )
+            .join(', ');
 
         // The bottom-right corner, where this test's own window is not: without a
         // window manager it opens at the origin, 1280 by 720.

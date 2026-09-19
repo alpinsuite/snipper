@@ -121,7 +121,10 @@ jobs:
         env:
           GDK_BACKEND: x11
         run: |
-          xvfb-run -a -s "-screen 0 1600x900x24" bash -c '
+          # -noreset: an X server with no clients left resets itself, and
+          # xsetroot is the only client until the test starts. Without it the
+          # colour is gone again before anything looks.
+          xvfb-run -a -s "-screen 0 1600x900x24 -noreset" bash -c '
             xsetroot -solid "#336699"
             # What the X server itself says the last pixel of the root is, in
             # BGRX. If this is not 99 66 33 the test below is not at fault.
