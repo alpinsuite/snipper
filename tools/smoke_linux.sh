@@ -68,7 +68,9 @@ sleep 2
 # screen, so finding it in the editor means it came through the portal.
 FIXTURE_COLOUR="#c0392b"
 convert -size 320x200 xc:"$FIXTURE_COLOUR" "$OUT/fixture.png"
-FAKE_PORTAL_ALWAYS_OK=1 python3 tools/fake_portal.py "$OUT/fixture.png" "$OUT/portal" &
+# Absolute: the portal hands back a file:// URI built from this path, and a
+# relative one loses its first segment to the URI's host field.
+FAKE_PORTAL_ALWAYS_OK=1 \n  python3 tools/fake_portal.py "$PWD/$OUT/fixture.png" "$PWD/$OUT/portal" &
 PORTAL=$!
 trap 'kill "$WM" "$PORTAL" 2> /dev/null' EXIT
 for _ in $(seq 1 50); do
