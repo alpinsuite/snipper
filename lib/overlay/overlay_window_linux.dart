@@ -30,26 +30,26 @@ class LinuxOverlayWindow implements OverlayWindow {
   Future<void> enter(ui.Rect physicalBounds) async {
     _savedBounds ??= await windowManager.getBounds();
 
-    // Straight from dart:ui rather than through WidgetsBinding: this layer
-    // talks to the platform and has no business importing the widget tree.
-    final ratio = ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
-    final gtkBounds = ui.Rect.fromLTWH(
-      physicalBounds.left / ratio,
-      physicalBounds.top / ratio,
-      physicalBounds.width / ratio,
-      physicalBounds.height / ratio,
-    );
-
-    await windowManager.setAsFrameless();
     await windowManager.setSkipTaskbar(true);
-    await windowManager.setBounds(gtkBounds);
     await windowManager.setAlwaysOnTop(true);
+    // Fullscreen, rather than setting the bounds to [physicalBounds]. Resizing
+    // the window by hand moves it out from under the engine, which then waits
+    // for a frame at the new size, never gets one, and hands the next click to
+    // a view with nothing behind it — a segfault, reproducibly, on the only
+    // flow this application is for. Asking the window manager to fullscreen
+    // the window goes through the path GTK and the engine agree about.
+    //
+    // The cost is that fullscreen covers the monitor the window is on, so a
+    // selection cannot cross onto a second screen. Windows, which can place
+    // its own overlay, still spans the whole desktop.
+    await windowManager.setFullScreen(true);
     await windowManager.show();
     await windowManager.focus();
   }
 
   @override
   Future<void> leave() async {
+    await windowManager.setFullScreen(false);
     await windowManager.setAlwaysOnTop(false);
     await windowManager.setSkipTaskbar(false);
     // The application draws its own title bar, so `hidden` is the ordinary
