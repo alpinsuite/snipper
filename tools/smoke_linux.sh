@@ -157,8 +157,25 @@ fi
 
 # --- 2. the region flow, from the open window --------------------------------
 
-echo "=== 2. Ctrl+N, drag, back"
+echo "=== 2a. Ctrl+Shift+N: a full screen capture, no overlay"
+# The same hide-capture-show the region flow does, without ever resizing the
+# window. If this fails too then the overlay is not the problem and the window
+# does not survive being hidden and shown again.
 if [[ -n "$GEOMETRY" ]]; then
+  xdotool key ctrl+shift+n
+  sleep 8
+  if ! kill -0 "$APP" 2> /dev/null; then
+    note "a full screen capture from the window killed it"
+  else
+    shot 2a-fullscreen
+    editor_shows_capture "$GEOMETRY" 2a-fullscreen \
+      || note "after a full screen capture the editor is not showing it"
+  fi
+  check_log "the full screen capture reported an error"
+fi
+
+echo "=== 2. Ctrl+N, drag, back"
+if [[ -n "$GEOMETRY" ]] && kill -0 "$APP" 2> /dev/null; then
   xdotool key ctrl+n
   if [[ -z "$(await_window "$SCREEN*" 40)" ]]; then
     note "Ctrl+N did not put the overlay over the screen"
