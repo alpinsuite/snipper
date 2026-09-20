@@ -148,6 +148,19 @@ editor_shows_capture() {
   (( blue >= 25 ))
 }
 
+# What the desktop's portal handed over is a flat red rectangle, and red is
+# nowhere else on this screen: not in the wallpaper, not in the interface. So
+# the whole screenshot can be asked how much of it is that red, which does not
+# depend on where in the window the canvas happens to sit. 320x200 out of
+# 1400x900 is about 5%; with nothing captured it is 0.
+screen_shows_fixture() {
+  local name="$1" red
+  red="$(convert "$OUT/$name.png" -fuzz 12% -transparent "$FIXTURE_COLOUR" \
+    -format '%[fx:int(1000*(1-mean.a))]' info:)"
+  echo "  $(( red / 10 )).$(( red % 10 ))% of the screen is what the portal returned"
+  (( red >= 20 ))
+}
+
 # --- 1. it opens -------------------------------------------------------------
 
 echo "=== 1. it opens"
@@ -203,7 +216,7 @@ for attempt in 1 2 3; do
     break
   fi
   shot "2-$attempt-editor"
-  editor_shows_capture "$GEOMETRY" "2-$attempt-editor" "$FIXTURE_COLOUR" \
+  screen_shows_fixture "2-$attempt-editor" \
     || note "the editor is not showing what the portal returned (attempt $attempt)"
   check_log "the region capture reported an error (attempt $attempt)"
 done
@@ -239,7 +252,7 @@ if [[ -z "$BACK" ]]; then
 else
   sleep 4
   shot 4-editor
-  editor_shows_capture "$BACK" 4-editor "$FIXTURE_COLOUR" \
+  screen_shows_fixture 4-editor \
     || note "--region: the editor is not showing what the portal returned"
 fi
 check_log "--region reported an error"
