@@ -32,6 +32,13 @@ class LinuxOverlayWindow implements OverlayWindow {
 
     await windowManager.setSkipTaskbar(true);
     await windowManager.setAlwaysOnTop(true);
+    // Mapped and drawing before the size changes. The engine renders for a
+    // window that is on screen; asked to grow one that is not, it waits for a
+    // frame that nothing is going to produce.
+    await windowManager.show();
+    await windowManager.focus();
+    // One frame at the old size, so the wait below has something to grow from.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
     // Fullscreen, rather than setting the bounds to [physicalBounds]. Resizing
     // the window by hand moves it out from under the engine, which then waits
     // for a frame at the new size, never gets one, and hands the next click to
@@ -43,8 +50,6 @@ class LinuxOverlayWindow implements OverlayWindow {
     // selection cannot cross onto a second screen. Windows, which can place
     // its own overlay, still spans the whole desktop.
     await windowManager.setFullScreen(true);
-    await windowManager.show();
-    await windowManager.focus();
   }
 
   @override
