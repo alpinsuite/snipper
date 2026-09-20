@@ -134,6 +134,18 @@ jobs:
               --dart-define=SNIPPER_ROOT_COLOUR=3368601
           '
 
+      # The Wayland path is a D-Bus conversation with the desktop, and there is
+      # no desktop here. tools/fake_portal.py owns the portal's name on a bus
+      # private to this step and answers as the specification says: on time,
+      # early, from a path of its own choosing, with a cancel, with a refusal,
+      # and finally not at all. It proves this side of the conversation; only a
+      # real GNOME or KDE session proves the other.
+      - name: Ask a portal for a screenshot, every way it can answer
+        run: |
+          sudo apt-get install -y dbus python3-dbus python3-gi imagemagick
+          dbus-run-session -- xvfb-run -a -s "-screen 0 1280x800x24 -noreset" \
+            bash tools/portal_test_linux.sh
+
   package:
     name: Package (.deb)
     runs-on: ubuntu-latest
