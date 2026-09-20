@@ -40,13 +40,7 @@ class LinuxOverlayWindow implements OverlayWindow {
       physicalBounds.height / ratio,
     );
 
-    // Not setAsFrameless: the window is created with TitleBarStyle.hidden and
-    // has no frame to take off. Asking again makes GTK undecorate a window
-    // that is already undecorated, which unrealizes it — and an unrealized
-    // window loses the surface the engine is drawing into, so the overlay
-    // never gets a frame at its new size and the first click into it lands in
-    // a view with nothing behind it. That is a segfault, every time, on the
-    // one flow this application exists for.
+    await windowManager.setAsFrameless();
     await windowManager.setSkipTaskbar(true);
     await windowManager.setBounds(gtkBounds);
     await windowManager.setAlwaysOnTop(true);
