@@ -91,6 +91,18 @@ void main() {
       expect(service.isWayland, isFalse);
     });
 
+    test('SNIPPER_CAPTURE=portal hands everything to the desktop', () {
+      // On an X server, where nothing else would: the runner honours the same
+      // variable, and the two have to agree about who runs the selection.
+      final service = withEnv(<String, String>{
+        'DISPLAY': ':0',
+        'GDK_BACKEND': 'x11',
+        'SNIPPER_CAPTURE': 'portal',
+      });
+      expect(service.isWayland, isTrue);
+      expect(service.canDrawOwnOverlay, isFalse);
+    });
+
     test('only the first GDK_BACKEND entry counts, as in GDK', () {
       final service = withEnv(<String, String>{
         'WAYLAND_DISPLAY': 'wayland-0',

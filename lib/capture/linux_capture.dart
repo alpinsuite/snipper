@@ -37,6 +37,11 @@ class LinuxCaptureService implements CaptureService {
   /// `GDK_BACKEND` pins it elsewhere — which is how somebody runs this under
   /// XWayland on purpose, and then the X11 path is the right one.
   bool get isWayland {
+    // The same switch the runner honours: `SNIPPER_CAPTURE=portal` sends every
+    // capture through the desktop, X server or not. For these purposes that
+    // *is* Wayland — the desktop runs the selection.
+    if (_environment['SNIPPER_CAPTURE'] == 'portal') return true;
+
     final pinned = _environment['GDK_BACKEND'] ?? '';
     if (pinned.isNotEmpty) {
       return pinned.split(',').first.trim() == 'wayland';

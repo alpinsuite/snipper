@@ -34,7 +34,14 @@ static constexpr char kPortalPath[] = "/org/freedesktop/portal/desktop";
 static constexpr char kPortalScreenshot[] = "org.freedesktop.portal.Screenshot";
 static constexpr char kPortalRequest[] = "org.freedesktop.portal.Request";
 
+// SNIPPER_CAPTURE=portal asks the desktop even on an X server. It is how the
+// portal path is tested, since CI has an X server and no compositor, and it is
+// also the answer for a desktop whose X root is not the real screen — a
+// Wayland session reached through XWayland shows every native window black.
+// LinuxCaptureService reads the same variable, so the two cannot disagree
+// about who runs the selection.
 static bool display_is_x11() {
+  if (g_strcmp0(g_getenv("SNIPPER_CAPTURE"), "portal") == 0) return false;
 #ifdef GDK_WINDOWING_X11
   GdkDisplay* display = gdk_display_get_default();
   return display != nullptr && GDK_IS_X11_DISPLAY(display);
