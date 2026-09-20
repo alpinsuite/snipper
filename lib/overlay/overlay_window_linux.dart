@@ -18,6 +18,7 @@ import 'overlay_window.dart';
 ///   multiplies by the device pixel ratio first. So a physical rectangle has to
 ///   be divided here and not there. That asymmetry works perfectly at 1x and
 ///   breaks on a HiDPI laptop, which is why it is written down.
+/// - **The window has to be on screen before it is resized.** See [enter].
 ///
 /// Under Wayland none of this applies: a client cannot position itself at all,
 /// and the compositor is asked to run the selection instead. That path does not
@@ -30,31 +31,37 @@ class LinuxOverlayWindow implements OverlayWindow {
   Future<void> enter(ui.Rect physicalBounds) async {
     _savedBounds ??= await windowManager.getBounds();
 
+    // Straight from dart:ui rather than through WidgetsBinding: this layer
+    // talks to the platform and has no business importing the widget tree.
+    final ratio = ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
+    final gtkBounds = ui.Rect.fromLTWH(
+      physicalBounds.left / ratio,
+      physicalBounds.top / ratio,
+      physicalBounds.width / ratio,
+      physicalBounds.height / ratio,
+    );
+
+    await windowManager.setAsFrameless();
     await windowManager.setSkipTaskbar(true);
-    await windowManager.setAlwaysOnTop(true);
-    // Mapped and drawing before the size changes. The engine renders for a
-    // window that is on screen; asked to grow one that is not, it waits for a
-    // frame that nothing is going to produce.
+
+    // **On screen and drawing before it is resized.** `hideFromCapture` hid
+    // this window a moment ago so that it would not be in its own screenshot,
+    // and the engine does not render for a window that is not on screen.
+    // Resized while hidden, it never produces a frame at the new size: the
+    // embedder waits a second for one, gives up, and the overlay is a
+    // screen-sized rectangle of nothing that segfaults on the first click into
+    // it. That happened on every run, both from the hotkey and from --region,
+    // and it is what `tools/smoke_linux.sh` exists to catch.
     await windowManager.show();
     await windowManager.focus();
-    // One frame at the old size, so the wait below has something to grow from.
     await Future<void>.delayed(const Duration(milliseconds: 250));
-    // Fullscreen, rather than setting the bounds to [physicalBounds]. Resizing
-    // the window by hand moves it out from under the engine, which then waits
-    // for a frame at the new size, never gets one, and hands the next click to
-    // a view with nothing behind it — a segfault, reproducibly, on the only
-    // flow this application is for. Asking the window manager to fullscreen
-    // the window goes through the path GTK and the engine agree about.
-    //
-    // The cost is that fullscreen covers the monitor the window is on, so a
-    // selection cannot cross onto a second screen. Windows, which can place
-    // its own overlay, still spans the whole desktop.
-    await windowManager.setFullScreen(true);
+
+    await windowManager.setBounds(gtkBounds);
+    await windowManager.setAlwaysOnTop(true);
   }
 
   @override
   Future<void> leave() async {
-    await windowManager.setFullScreen(false);
     await windowManager.setAlwaysOnTop(false);
     await windowManager.setSkipTaskbar(false);
     // The application draws its own title bar, so `hidden` is the ordinary
