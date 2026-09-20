@@ -174,29 +174,36 @@ if [[ -n "$GEOMETRY" ]]; then
   check_log "the full screen capture reported an error"
 fi
 
-echo "=== 2. Ctrl+N, drag, back"
-if [[ -n "$GEOMETRY" ]] && kill -0 "$APP" 2> /dev/null; then
+# Three times, not once. Getting the window on screen before it is resized is
+# a race against the engine, and a fixed delay in its place passed here once
+# and crashed on the very next run with the same binary. One go proves nothing.
+for attempt in 1 2 3; do
+  echo "=== 2.$attempt Ctrl+N, drag, back"
+  if [[ -z "$GEOMETRY" ]] || ! kill -0 "$APP" 2> /dev/null; then
+    note "the application was not running for region attempt $attempt"
+    break
+  fi
   xdotool key ctrl+n
   if [[ -z "$(await_window "$SCREEN*" 40)" ]]; then
-    note "Ctrl+N did not put the overlay over the screen"
-    shot 2-failed
-  else
-    sleep 3
-    shot 2-overlay
-    drag
-    BACK="$(await_window "$WINDOW*" 30)"
-    if [[ -z "$BACK" ]]; then
-      note "the window was not given back after the selection"
-      shot 2-failed
-    else
-      sleep 3
-      shot 2-editor
-      editor_shows_capture "$BACK" 2-editor \
-        || note "the editor is not showing what was captured"
-    fi
+    note "Ctrl+N did not put the overlay over the screen (attempt $attempt)"
+    shot "2-$attempt-failed"
+    break
   fi
-  check_log "the region capture reported an error"
-fi
+  sleep 3
+  shot "2-$attempt-overlay"
+  drag
+  BACK="$(await_window "$WINDOW*" 30)"
+  if [[ -z "$BACK" ]]; then
+    note "the window was not given back after the selection (attempt $attempt)"
+    shot "2-$attempt-failed"
+    break
+  fi
+  sleep 3
+  shot "2-$attempt-editor"
+  editor_shows_capture "$BACK" "2-$attempt-editor" \
+    || note "the editor is not showing what was captured (attempt $attempt)"
+  check_log "the region capture reported an error (attempt $attempt)"
+done
 stop
 
 # --- 3. a capture from the command line --------------------------------------

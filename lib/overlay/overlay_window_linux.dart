@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/scheduler.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'overlay_window.dart';
@@ -53,8 +54,25 @@ class LinuxOverlayWindow implements OverlayWindow {
     // overlay with nothing in it that crashes on the first click.
     await windowManager.show();
     await windowManager.focus();
-    await Future<void>.delayed(const Duration(milliseconds: 250));
+    await _aFrame();
     await windowManager.setFullScreen(true);
+    // And again after, so the overlay is on screen with the frozen desktop in
+    // it before the caller starts waiting for a drag.
+    await _aFrame();
+  }
+
+  /// Waits for the framework to actually produce a frame.
+  ///
+  /// A `Future.delayed` here was the original mistake: it wins the race on a
+  /// quick machine and loses it on a slow one, which is a crash that only
+  /// happens to other people. `endOfFrame` alone would hang when nothing has
+  /// asked for a frame, so one is asked for.
+  ///
+  /// `scheduler` rather than `widgets`: this layer talks to the platform and
+  /// does not import the widget tree.
+  Future<void> _aFrame() {
+    SchedulerBinding.instance.scheduleFrame();
+    return SchedulerBinding.instance.endOfFrame;
   }
 
   @override
