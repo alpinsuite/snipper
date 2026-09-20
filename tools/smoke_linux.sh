@@ -60,10 +60,12 @@ stop() {
   return 0
 }
 
+# start <label> [arguments...]
 start() {
-  "$BINARY" "$@" > "$OUT/stdout-$1.log" 2> "$OUT/stderr-$1.log" &
+  local label="$1"; shift
+  LOG="$OUT/stderr-$label.log"
+  "$BINARY" "$@" > "$OUT/stdout-$label.log" 2> "$LOG" &
   APP=$!
-  LOG="$OUT/stderr-$1.log"
 }
 
 # The geometry of the application's own window, or empty while it has none.
@@ -128,7 +130,7 @@ editor_shows_capture() {
 # --- 1. it opens -------------------------------------------------------------
 
 echo "=== 1. it opens"
-start
+start window
 GEOMETRY="$(await_window "$WINDOW*" 30)"
 if [[ -z "$GEOMETRY" ]]; then
   note "no window 30 seconds after starting"
@@ -176,7 +178,7 @@ echo "=== 3. --full --clipboard"
 # No window is ever shown, and the process exits 0 only once an image is on the
 # clipboard. Whether it survives the process needs a clipboard manager, which
 # is not this test's business; that it got there is.
-start --full --clipboard
+start clipboard --full --clipboard
 STATUS="timeout"
 for _ in $(seq 1 40); do
   sleep 1
@@ -192,7 +194,7 @@ check_log "the command-line capture reported an error"
 # --- 4. the region flow, from a cold start -----------------------------------
 
 echo "=== 4. --region from cold"
-start --region
+start region --region
 if [[ -z "$(await_window "$SCREEN*" 40)" ]]; then
   note "--region never put the overlay over the screen"
   shot 4-failed
