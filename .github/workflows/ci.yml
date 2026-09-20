@@ -93,7 +93,7 @@ jobs:
           GALLIUM_DRIVER: llvmpipe
         run: |
           sudo apt-get install -y xvfb x11-utils x11-apps x11-xserver-utils \
-                                  imagemagick xdotool libgl1-mesa-dri
+                                  imagemagick xdotool libgl1-mesa-dri openbox
           xvfb-run -a -s "-screen 0 1400x900x24 -noreset +extension GLX +render" \
             bash tools/smoke_linux.sh
 
