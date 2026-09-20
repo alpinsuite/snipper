@@ -77,6 +77,25 @@ jobs:
           sudo apt-get install -y desktop-file-utils
           desktop-file-validate packaging/snipper.desktop
 
+      # The release binary, started on a real X server: it has to open, take a
+      # capture asked for on the command line, and run a dragged selection
+      # through the overlay and back. Until this existed the Linux build had
+      # never been launched at all — only its capture channel had.
+      - name: It opens, and captures
+        run: |
+          sudo apt-get install -y xvfb x11-utils x11-apps x11-xserver-utils \
+                                  imagemagick xdotool
+          xvfb-run -a -s "-screen 0 1400x900x24 -noreset" bash tools/smoke_linux.sh
+
+      # Kept whether or not the step above passed: a smoke test can say the
+      # window exists, and only a person can say it looks right.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snipper-linux-screenshot
+          path: build/smoke/
+          if-no-files-found: ignore
+
       - name: Software Bill of Materials
         # CycloneDX, resolved from pubspec.lock and written in the same job
         # that produced the binary, so it describes this build rather than
