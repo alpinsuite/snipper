@@ -10,29 +10,36 @@
 #   1. It opens. A window maps, at the size asked for, with something drawn in
 #      it. Until this existed the Linux build had never been started at all —
 #      only its capture channel had, from a test that draws no interface.
-#   2. Ctrl+N from that window runs the whole region flow: the overlay covers
-#      the screen, a dragged rectangle becomes a snip, and the window comes
-#      back the size it was with the capture in it. This is what the
-#      application is for, and the one place a mistake strands the window
-#      frameless and the size of the desktop.
+#   2. Ctrl+N asks the desktop for a region and opens what comes back. On
+#      Linux the selection belongs to the desktop on both display servers, so
+#      what this drives is the portal conversation and the editor, not an
+#      overlay of our own. Three times over, because the thing it replaced
+#      passed once and crashed on the next run with the same binary.
 #   3. `--full --clipboard` exits 0. That is a whole capture through the real
 #      application: the process only exits 0 when an image reached the
 #      clipboard.
 #   4. `--region` does the same as 2, but from a cold start with no window ever
 #      shown — the shape a desktop shortcut uses.
 #
+# `tools/fake_portal.py` stands in for xdg-desktop-portal, which a runner does
+# not have, and hands back one flat red image so the editor can be checked
+# against a colour that is nowhere else on the screen.
+#
 # Every part runs even when an earlier one fails, because which of them fail is
 # the useful information; the script fails at the end if any did. What it
 # cannot do is judge how any of it looks, which is why the screenshots are kept.
 #
-# Needs imagemagick, x11-utils, x11-apps, x11-xserver-utils and xdotool.
+# Needs imagemagick, x11-utils, x11-apps, x11-xserver-utils, xdotool, openbox,
+# python3-dbus and python3-gi, and a session bus:
+#
+#   dbus-run-session -- xvfb-run -a -s "-screen 0 1400x900x24 -noreset" \
+#     bash tools/smoke_linux.sh
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
 BINARY="${1:-build/linux/x64/release/bundle/snipper}"
 OUT="${SMOKE_OUT:-build/smoke}"
-SCREEN="1400x900"
 WINDOW="1080x720"
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -54,8 +61,21 @@ xsetroot -solid "$ROOT_COLOUR"
 # bare Xvfb is the only place that does not.
 openbox &
 WM=$!
-trap 'kill "$WM" 2> /dev/null' EXIT
 sleep 2
+
+# The desktop's screenshot portal, which a runner does not have. It answers
+# with this one flat red image, which is not a colour anywhere else on the
+# screen, so finding it in the editor means it came through the portal.
+FIXTURE_COLOUR="#c0392b"
+convert -size 320x200 xc:"$FIXTURE_COLOUR" "$OUT/fixture.png"
+FAKE_PORTAL_ALWAYS_OK=1 python3 tools/fake_portal.py "$OUT/fixture.png" "$OUT/portal" &
+PORTAL=$!
+trap 'kill "$WM" "$PORTAL" 2> /dev/null' EXIT
+for _ in $(seq 1 50); do
+  [[ -f "$OUT/portal/ready" ]] && break
+  sleep 0.2
+done
+[[ -f "$OUT/portal/ready" ]] || { echo "::error::the fake portal never took its bus name"; exit 1; }
 
 APP=""
 PROBLEMS=()
@@ -109,31 +129,19 @@ check_log() {
   fi
 }
 
-# Drags a rectangle across the overlay.
-drag() {
-  xdotool mousemove 300 250
-  xdotool mousedown 1
-  local x
-  for x in 420 600 780 900; do
-    xdotool mousemove "$x" $(( 250 + (x - 300) / 2 ))
-    sleep 0.2
-  done
-  xdotool mouseup 1
-}
-
 # The snip is a piece of a desktop that was one flat colour, and the editor is
 # showing it. Looked for in the middle of the window rather than anywhere on
 # the screen, because the root is that same colour and is visible around the
 # window — a check that passed on the wallpaper would prove nothing.
 editor_shows_capture() {
-  local geometry="$1" name="$2" w h x y blue
+  local geometry="$1" name="$2" colour="${3:-$ROOT_COLOUR}" w h x y blue
   IFS='x+' read -r w h x y <<< "$geometry"
   convert "$OUT/$name.png" \
     -crop "300x200+$(( x + w / 2 - 150 ))+$(( y + h / 2 - 100 ))" +repage \
     "$OUT/$name-canvas.png"
-  blue="$(convert "$OUT/$name-canvas.png" -fuzz 12% -transparent "$ROOT_COLOUR" \
+  blue="$(convert "$OUT/$name-canvas.png" -fuzz 12% -transparent "$colour" \
     -format '%[fx:int(100*(1-mean.a))]' info:)"
-  echo "  the middle of the editor is $blue% the colour that was captured"
+  echo "  the middle of the editor is $blue% the colour it should be"
   (( blue >= 25 ))
 }
 
@@ -174,34 +182,26 @@ if [[ -n "$GEOMETRY" ]]; then
   check_log "the full screen capture reported an error"
 fi
 
-# Three times, not once. Getting the window on screen before it is resized is
-# a race against the engine, and a fixed delay in its place passed here once
-# and crashed on the very next run with the same binary. One go proves nothing.
+# Three times, not once: the overlay this replaced passed here on one run and
+# segfaulted on the next with the same binary, and one go would not have
+# noticed. The window never changes size now - the desktop does the selecting -
+# so what is watched for is the red image arriving in the editor.
 for attempt in 1 2 3; do
-  echo "=== 2.$attempt Ctrl+N, drag, back"
+  echo "=== 2.$attempt Ctrl+N: the desktop selects, the editor opens it"
   if [[ -z "$GEOMETRY" ]] || ! kill -0 "$APP" 2> /dev/null; then
     note "the application was not running for region attempt $attempt"
     break
   fi
   xdotool key ctrl+n
-  if [[ -z "$(await_window "$SCREEN*" 40)" ]]; then
-    note "Ctrl+N did not put the overlay over the screen (attempt $attempt)"
+  sleep 8
+  if ! kill -0 "$APP" 2> /dev/null; then
+    note "the region capture killed the application (attempt $attempt)"
     shot "2-$attempt-failed"
     break
   fi
-  sleep 3
-  shot "2-$attempt-overlay"
-  drag
-  BACK="$(await_window "$WINDOW*" 30)"
-  if [[ -z "$BACK" ]]; then
-    note "the window was not given back after the selection (attempt $attempt)"
-    shot "2-$attempt-failed"
-    break
-  fi
-  sleep 3
   shot "2-$attempt-editor"
-  editor_shows_capture "$BACK" "2-$attempt-editor" \
-    || note "the editor is not showing what was captured (attempt $attempt)"
+  editor_shows_capture "$GEOMETRY" "2-$attempt-editor" "$FIXTURE_COLOUR" \
+    || note "the editor is not showing what the portal returned (attempt $attempt)"
   check_log "the region capture reported an error (attempt $attempt)"
 done
 stop
@@ -229,23 +229,15 @@ check_log "the command-line capture reported an error"
 
 echo "=== 4. --region from cold"
 start region --region
-if [[ -z "$(await_window "$SCREEN*" 40)" ]]; then
-  note "--region never put the overlay over the screen"
+BACK="$(await_window "$WINDOW*" 40)"
+if [[ -z "$BACK" ]]; then
+  note "--region never opened a window with the selection in it"
   shot 4-failed
 else
-  sleep 3
-  shot 4-overlay
-  drag
-  BACK="$(await_window "$WINDOW*" 30)"
-  if [[ -z "$BACK" ]]; then
-    note "--region did not give the window back after the selection"
-    shot 4-failed
-  else
-    sleep 3
-    shot 4-editor
-    editor_shows_capture "$BACK" 4-editor \
-      || note "--region: the editor is not showing what was captured"
-  fi
+  sleep 4
+  shot 4-editor
+  editor_shows_capture "$BACK" 4-editor "$FIXTURE_COLOUR" \
+    || note "--region: the editor is not showing what the portal returned"
 fi
 check_log "--region reported an error"
 xwininfo -root -tree > "$OUT/windows.txt"

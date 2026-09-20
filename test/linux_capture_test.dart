@@ -69,7 +69,18 @@ void main() {
     test('X11 when there is no Wayland socket', () {
       final service = withEnv(<String, String>{'DISPLAY': ':0'});
       expect(service.isWayland, isFalse);
-      expect(service.canDrawOwnOverlay, isTrue);
+    });
+
+    test('the desktop selects, on either display server', () {
+      // Growing this application's own window to cover the screen is what the
+      // Windows build does. On Linux it left the engine with no frame at the
+      // new size and crashed on the first click into it, about half the time.
+      for (final environment in <Map<String, String>>[
+        <String, String>{'DISPLAY': ':0'},
+        <String, String>{'DISPLAY': ':0', 'WAYLAND_DISPLAY': 'wayland-0'},
+      ]) {
+        expect(withEnv(environment).canDrawOwnOverlay, isFalse);
+      }
     });
 
     test('Wayland when the compositor advertises itself', () {

@@ -33,6 +33,10 @@ class LinuxCaptureService implements CaptureService {
 
   /// Whether GDK will have picked Wayland for this process.
   ///
+  /// The runner needs this distinction, because it reads the X root window
+  /// directly where it can. The selection does not: [canDrawOwnOverlay] is
+  /// false either way.
+  ///
   /// GTK 3 tries Wayland first whenever `WAYLAND_DISPLAY` is set, unless
   /// `GDK_BACKEND` pins it elsewhere — which is how somebody runs this under
   /// XWayland on purpose, and then the X11 path is the right one.
@@ -49,10 +53,27 @@ class LinuxCaptureService implements CaptureService {
     return (_environment['WAYLAND_DISPLAY'] ?? '').isNotEmpty;
   }
 
-  /// False under Wayland: a client there cannot place a window, let alone
-  /// stretch one across every monitor, so the desktop runs the selection.
+  /// Always false on Linux: the desktop runs the selection.
+  ///
+  /// Under Wayland there is no choice — a client cannot place a window, let
+  /// alone stretch one across every monitor.
+  ///
+  /// Under X11 there is, and it was taken the other way first: the application
+  /// grew its own window to cover the screen and drew the selection itself, as
+  /// it does on Windows. That does not survive the Flutter engine. Resizing
+  /// the window out from under it leaves the embedder waiting for a frame at
+  /// the new size that never comes, and the overlay is a screen-sized
+  /// rectangle of nothing that segfaults on the first click into it. It
+  /// happened on about half of the runs in `tools/smoke_linux.sh`, from the
+  /// hotkey and from `--region` alike, and neither showing the window first
+  /// nor waiting on a real frame nor `gtk_window_fullscreen` made it reliable.
+  ///
+  /// So both display servers take the same road: `xdg-desktop-portal` is asked
+  /// for an interactive screenshot, and whatever the user chose comes back
+  /// already cropped. It costs a dependency that GNOME and KDE both ship, and
+  /// a desktop without one says which package is missing.
   @override
-  bool get canDrawOwnOverlay => !isWayland;
+  bool get canDrawOwnOverlay => false;
 
   @override
   Future<VirtualDesktop> enumerateDisplays() async {

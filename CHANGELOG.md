@@ -12,10 +12,12 @@ First version. Everything below is new.
 
 ### Added
 
-- **Capture a region or the whole screen.** A region is dragged out over a
-  frozen picture of the desktop, so nothing moves while it is being chosen.
-  There is an optional delay, for capturing something that only appears while
-  another application has the pointer.
+- **Capture a region or the whole screen.** A region is chosen over a frozen
+  picture of the desktop, so nothing moves while it is being picked out — in
+  Snipper's own overlay on Windows, and in the desktop's screenshot interface
+  on Linux, for the reason under *Screen capture on Linux* below. There is an
+  optional delay, for catching something that only appears while another
+  application has the pointer.
 - **Annotate before it goes anywhere.** The capture opens in an editor rather
   than a file: draw on it, mark up what matters, then copy it to the clipboard
   or save it.
@@ -25,13 +27,19 @@ First version. Everything below is new.
   shortcut wants. Both are offered as actions on the launcher entry, because a
   client cannot register a system-wide hotkey under Wayland and the desktop's
   own shortcut editor has to be pointed at one of these instead.
-- **Screen capture on Linux.** Under X11 Snipper reads the root window and
-  selects a region in its own overlay, exactly as on Windows. Under Wayland an
-  application is allowed to do neither, so it asks the desktop through
-  `xdg-desktop-portal`: a full-screen capture comes straight back, and a region
-  is chosen in the desktop's own screenshot interface and then opens in the
-  editor. Closing that interface cancels quietly. A desktop with no portal
-  installed says so, and names the package.
+- **Screen capture on Linux.** A full-screen capture is read straight off the
+  X server where there is one, and asked of the desktop under Wayland, where an
+  application is not allowed to read the screen itself.
+
+  **A region is always selected by the desktop**, through
+  `xdg-desktop-portal`, on both display servers: its own screenshot interface
+  opens, and what you choose comes back already cropped and ready to mark up.
+  Closing that interface cancels quietly, and a desktop with no portal
+  installed says so and names the package. Drawing our own selection over the
+  screen is what the Windows build does, and it was tried here first — it
+  needs the window resized out from under the Flutter engine, which then never
+  draws the overlay and ends the process on the first click. That happened on
+  about half of all runs, so the desktop does the selecting instead.
 
   `SNIPPER_CAPTURE=portal` sends captures through the desktop even on an X
   server, for a Wayland session reached through XWayland, where the X root
@@ -46,24 +54,19 @@ First version. Everything below is new.
 
 ### Known limitations
 
-- **Screen capture under Wayland has not been run on a real desktop.** It is
-  exercised in CI against a stand-in for the portal that follows the
-  specification through every answer it allows — on time, before the call
-  returns, from a request path of its own choosing, a cancel, a refusal, and no
-  portal at all — and the file the portal writes is checked to have been
-  deleted afterwards. What no test here can show is that GNOME and KDE answer
-  the way the specification says they do. **Under X11 the whole flow is tested
-  against a real X server**, pixel for pixel, and the application is started,
-  driven through a dragged selection and screenshotted on every push.
+- **Region capture has not been run against a real desktop portal.** Every
+  push starts the application on a real X server, presses the shortcut three
+  times and checks that what the portal returned is what the editor opened
+  — but the portal answering is `tools/fake_portal.py`, which follows the
+  specification through every reply it allows: on time, before the call
+  returns, from a request path of its own choosing, a cancel, a refusal, and
+  no portal at all. It also checks that the file the portal wrote is deleted
+  afterwards. What no test here can show is that GNOME and KDE answer the way
+  the specification says they do. Full-screen capture **is** checked against a
+  real X server, pixel for pixel.
 
   If a capture fails on your desktop, the message says which part refused, and
   [an issue](https://github.com/alpinsuite/snipper/issues) with it in is the
   most useful thing you can send.
-- **On Linux a region is selected on one monitor.** The overlay fullscreens
-  onto the screen the window is on, so a selection cannot be dragged across
-  onto a second one. Covering the whole desktop means sizing the window by
-  hand, which the Flutter engine does not survive — the overlay comes up empty
-  and the first click ends the process. Full-screen capture still takes every
-  monitor. On Windows, which places its own overlay, a selection can cross.
 - **x86-64 Linux only.** There is no 32-bit and no ARM package, and nothing is
   published for Windows yet, though it builds and runs there.
