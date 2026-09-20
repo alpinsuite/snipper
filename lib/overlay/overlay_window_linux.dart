@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/scheduler.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'overlay_window.dart';
@@ -8,16 +9,30 @@ import 'overlay_window.dart';
 ///
 /// Two things about this that are not obvious from the `window_manager` API:
 ///
-/// - **`setFullScreen` cannot be used.** It is `gtk_window_fullscreen`, which
-///   fullscreens onto one monitor and will never span a multi-monitor desktop.
-///   Frameless plus explicit bounds plus keep-above is the only arrangement
-///   that covers everything.
-/// - **`setBounds` is in GTK coordinates on Linux, not physical pixels.** The
-///   plugin passes the values straight to `gtk_window_move` and
-///   `gtk_window_resize` with no scaling, where the Windows implementation
-///   multiplies by the device pixel ratio first. So a physical rectangle has to
-///   be divided here and not there. That asymmetry works perfectly at 1x and
-///   breaks on a HiDPI laptop, which is why it is written down.
+/// - **The overlay covers one monitor, not the whole desktop.** Frameless plus
+///   explicit bounds would cover everything, and is what this did first, but
+///   `setBounds` moves the window out from under the engine: it then waits a
+///   second for a frame at the new size, never gets one, and the overlay is a
+///   screen-sized rectangle of nothing that segfaults on the first click into
+///   it. That happened on every run, from the hotkey and from `--region`
+///   alike. `setFullScreen` is `gtk_window_fullscreen`, which the engine
+///   follows, and the price is that it fullscreens onto the monitor the window
+///   is on. A selection cannot cross onto a second screen here; on Windows,
+///   which places its own overlay, it still can.
+/// - **The window has to be on screen before it is resized**, for the same
+///   reason: `hideFromCapture` has just hidden it, and a hidden window
+///   produces no frames to grow from. Both halves are needed — showing it
+///   first with `setBounds` still crashes, and `setFullScreen` on a hidden
+///   window still renders nothing.
+/// - **`setBounds` is in GTK coordinates on Linux, not physical pixels.** It
+///   is still used to put the window back in [leave]. The plugin passes the
+///   values straight to `gtk_window_move` and `gtk_window_resize` with no
+///   scaling, where the Windows implementation multiplies by the device pixel
+///   ratio first, so a physical rectangle has to be divided here and not
+///   there. That asymmetry works perfectly at 1x and breaks on a HiDPI laptop.
+///
+/// `tools/smoke_linux.sh` drives all of this on a real X server and is what
+/// found it; none of it is visible to a widget test.
 ///
 /// Under Wayland none of this applies: a client cannot position itself at all,
 /// and the compositor is asked to run the selection instead. That path does not
@@ -30,26 +45,39 @@ class LinuxOverlayWindow implements OverlayWindow {
   Future<void> enter(ui.Rect physicalBounds) async {
     _savedBounds ??= await windowManager.getBounds();
 
-    // Straight from dart:ui rather than through WidgetsBinding: this layer
-    // talks to the platform and has no business importing the widget tree.
-    final ratio = ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
-    final gtkBounds = ui.Rect.fromLTWH(
-      physicalBounds.left / ratio,
-      physicalBounds.top / ratio,
-      physicalBounds.width / ratio,
-      physicalBounds.height / ratio,
-    );
-
-    await windowManager.setAsFrameless();
     await windowManager.setSkipTaskbar(true);
-    await windowManager.setBounds(gtkBounds);
     await windowManager.setAlwaysOnTop(true);
+
+    // On screen and drawing before the size changes, and fullscreen rather
+    // than [physicalBounds]. Both halves matter, and the class comment above
+    // says why; the short version is that either one on its own leaves an
+    // overlay with nothing in it that crashes on the first click.
     await windowManager.show();
     await windowManager.focus();
+    await _aFrame();
+    await windowManager.setFullScreen(true);
+    // And again after, so the overlay is on screen with the frozen desktop in
+    // it before the caller starts waiting for a drag.
+    await _aFrame();
+  }
+
+  /// Waits for the framework to actually produce a frame.
+  ///
+  /// A `Future.delayed` here was the original mistake: it wins the race on a
+  /// quick machine and loses it on a slow one, which is a crash that only
+  /// happens to other people. `endOfFrame` alone would hang when nothing has
+  /// asked for a frame, so one is asked for.
+  ///
+  /// `scheduler` rather than `widgets`: this layer talks to the platform and
+  /// does not import the widget tree.
+  Future<void> _aFrame() {
+    SchedulerBinding.instance.scheduleFrame();
+    return SchedulerBinding.instance.endOfFrame;
   }
 
   @override
   Future<void> leave() async {
+    await windowManager.setFullScreen(false);
     await windowManager.setAlwaysOnTop(false);
     await windowManager.setSkipTaskbar(false);
     // The application draws its own title bar, so `hidden` is the ordinary

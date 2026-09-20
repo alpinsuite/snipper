@@ -1,0 +1,271 @@
+#!/usr/bin/env bash
+#
+# Runs the built application on a real X server the way a person would, and
+# leaves screenshots behind for a person to look at.
+#
+#   xvfb-run -a -s "-screen 0 1400x900x24 -noreset" bash tools/smoke_linux.sh
+#
+# Four things, in the order a person meets them:
+#
+#   1. It opens. A window maps, at the size asked for, with something drawn in
+#      it. Until this existed the Linux build had never been started at all —
+#      only its capture channel had, from a test that draws no interface.
+#   2. Ctrl+N asks the desktop for a region and opens what comes back. On
+#      Linux the selection belongs to the desktop on both display servers, so
+#      what this drives is the portal conversation and the editor, not an
+#      overlay of our own. Three times over, because the thing it replaced
+#      passed once and crashed on the next run with the same binary.
+#   3. `--full --clipboard` exits 0. That is a whole capture through the real
+#      application: the process only exits 0 when an image reached the
+#      clipboard.
+#   4. `--region` does the same as 2, but from a cold start with no window ever
+#      shown — the shape a desktop shortcut uses.
+#
+# `tools/fake_portal.py` stands in for xdg-desktop-portal, which a runner does
+# not have, and hands back one flat red image so the editor can be checked
+# against a colour that is nowhere else on the screen.
+#
+# Every part runs even when an earlier one fails, because which of them fail is
+# the useful information; the script fails at the end if any did. What it
+# cannot do is judge how any of it looks, which is why the screenshots are kept.
+#
+# Needs imagemagick, x11-utils, x11-apps, x11-xserver-utils, xdotool, openbox,
+# python3-dbus and python3-gi, and a session bus:
+#
+#   dbus-run-session -- xvfb-run -a -s "-screen 0 1400x900x24 -noreset" \
+#     bash tools/smoke_linux.sh
+
+set -uo pipefail
+cd "$(dirname "$0")/.."
+
+BINARY="${1:-build/linux/x64/release/bundle/snipper}"
+OUT="${SMOKE_OUT:-build/smoke}"
+WINDOW="1080x720"
+rm -rf "$OUT"
+mkdir -p "$OUT"
+
+# Settings of its own, so every run starts from the defaults and nothing is
+# left in the runner's home.
+export XDG_DATA_HOME="$PWD/$OUT/xdg-data"
+export XDG_CONFIG_HOME="$PWD/$OUT/xdg-config"
+
+# Something on the root window, so a capture of it is not a rectangle of black
+# and "the screenshot arrived" can be told from "the screenshot is empty".
+ROOT_COLOUR="#1d5b7a"
+xsetroot -solid "$ROOT_COLOUR"
+
+# A window manager, because the application asks for its window to be resized
+# and then waits to be given what it asked for. With nobody managing the
+# screen those requests are answered by the X server alone, and the overlay
+# never gets a frame at its new size. Every desktop this ships to has one; a
+# bare Xvfb is the only place that does not.
+openbox &
+WM=$!
+sleep 2
+
+# The desktop's screenshot portal, which a runner does not have. It answers
+# with this one flat red image, which is not a colour anywhere else on the
+# screen, so finding it in the editor means it came through the portal.
+FIXTURE_COLOUR="#c0392b"
+convert -size 320x200 xc:"$FIXTURE_COLOUR" "$OUT/fixture.png"
+# Absolute: the portal hands back a file:// URI built from this path, and a
+# relative one loses its first segment to the URI's host field.
+FAKE_PORTAL_ALWAYS_OK=1 python3 tools/fake_portal.py \
+  "$PWD/$OUT/fixture.png" "$PWD/$OUT/portal" &
+PORTAL=$!
+trap 'kill "$WM" "$PORTAL" 2> /dev/null' EXIT
+for _ in $(seq 1 50); do
+  [[ -f "$OUT/portal/ready" ]] && break
+  sleep 0.2
+done
+[[ -f "$OUT/portal/ready" ]] || { echo "::error::the fake portal never took its bus name"; exit 1; }
+
+APP=""
+PROBLEMS=()
+note() { echo "::error::$1"; PROBLEMS+=("$1"); }
+
+shot() { xwd -root -silent | convert xwd:- "$OUT/$1.png"; }
+
+stop() {
+  [[ -n "$APP" ]] && kill "$APP" 2> /dev/null
+  [[ -n "$APP" ]] && wait "$APP" 2> /dev/null
+  APP=""
+  return 0
+}
+
+# start <label> [arguments...]
+start() {
+  local label="$1"; shift
+  LOG="$OUT/stderr-$label.log"
+  "$BINARY" "$@" > "$OUT/stdout-$label.log" 2> "$LOG" &
+  APP=$!
+}
+
+# The geometry of the application's own window, or empty while it has none.
+window() {
+  xwininfo -root -tree 2> /dev/null \
+    | sed -n 's/.*"Snipper[^"]*": ([^)]*) *\([0-9]*x[0-9]*+[0-9-]*+[0-9-]*\) .*/\1/p' \
+    | head -1
+}
+
+# Waits for the window to report a size matching $1, a glob.
+await_window() {
+  local want="$1" seconds="$2" geometry
+  for _ in $(seq 1 "$seconds"); do
+    sleep 1
+    if [[ -n "$APP" ]] && ! kill -0 "$APP" 2> /dev/null; then
+      echo "" ; return 2
+    fi
+    geometry="$(window)"
+    if [[ "$geometry" == $want ]]; then echo "$geometry"; return 0; fi
+  done
+  echo ""
+  return 1
+}
+
+# Flutter's own way of saying something threw. GTK's chatter about a missing
+# accessibility bus or DRI3 in a container is not that, and is left alone.
+check_log() {
+  if grep -qE "Unhandled Exception|EXCEPTION CAUGHT BY|\[ERROR:flutter" "$LOG"; then
+    note "$1"
+    grep -E "Unhandled Exception|EXCEPTION CAUGHT BY|\[ERROR:flutter" "$LOG" | head -5
+  fi
+}
+
+# The snip is a piece of a desktop that was one flat colour, and the editor is
+# showing it. Looked for in the middle of the window rather than anywhere on
+# the screen, because the root is that same colour and is visible around the
+# window — a check that passed on the wallpaper would prove nothing.
+editor_shows_capture() {
+  local geometry="$1" name="$2" colour="${3:-$ROOT_COLOUR}" w h x y blue
+  IFS='x+' read -r w h x y <<< "$geometry"
+  convert "$OUT/$name.png" \
+    -crop "300x200+$(( x + w / 2 - 150 ))+$(( y + h / 2 - 100 ))" +repage \
+    "$OUT/$name-canvas.png"
+  blue="$(convert "$OUT/$name-canvas.png" -fuzz 12% -transparent "$colour" \
+    -format '%[fx:int(100*(1-mean.a))]' info:)"
+  echo "  the middle of the editor is $blue% the colour it should be"
+  (( blue >= 25 ))
+}
+
+# What the desktop's portal handed over is a flat red rectangle, and red is
+# nowhere else on this screen: not in the wallpaper, not in the interface. So
+# the whole screenshot can be asked how much of it is that red, which does not
+# depend on where in the window the canvas happens to sit. 320x200 out of
+# 1400x900 is about 5%; with nothing captured it is 0.
+screen_shows_fixture() {
+  local name="$1" red
+  red="$(convert "$OUT/$name.png" -fuzz 12% -transparent "$FIXTURE_COLOUR" \
+    -format '%[fx:int(1000*(1-mean.a))]' info:)"
+  echo "  $(( red / 10 )).$(( red % 10 ))% of the screen is what the portal returned"
+  (( red >= 20 ))
+}
+
+# --- 1. it opens -------------------------------------------------------------
+
+echo "=== 1. it opens"
+start window
+GEOMETRY="$(await_window "$WINDOW*" 30)"
+if [[ -z "$GEOMETRY" ]]; then
+  note "no window 30 seconds after starting"
+  shot 1-failed
+else
+  echo "  window: $GEOMETRY"
+  sleep 4
+  shot 1-window
+  COLOURS="$(convert "$OUT/1-window.png" -format '%k' info:)"
+  echo "  the screenshot has $COLOURS distinct colours"
+  (( COLOURS >= 50 )) || note "the window mapped and drew nothing"
+  check_log "the application reported an error while starting"
+fi
+
+# --- 2. the region flow, from the open window --------------------------------
+
+echo "=== 2a. Ctrl+Shift+N: a full screen capture, no overlay"
+# The same hide-capture-show the region flow does, without ever resizing the
+# window. If this fails too then the overlay is not the problem and the window
+# does not survive being hidden and shown again.
+if [[ -n "$GEOMETRY" ]]; then
+  xdotool key ctrl+shift+n
+  sleep 8
+  if ! kill -0 "$APP" 2> /dev/null; then
+    note "a full screen capture from the window killed it"
+  else
+    shot 2a-fullscreen
+    editor_shows_capture "$GEOMETRY" 2a-fullscreen \
+      || note "after a full screen capture the editor is not showing it"
+  fi
+  check_log "the full screen capture reported an error"
+fi
+
+# Three times, not once: the overlay this replaced passed here on one run and
+# segfaulted on the next with the same binary, and one go would not have
+# noticed. The window never changes size now - the desktop does the selecting -
+# so what is watched for is the red image arriving in the editor.
+for attempt in 1 2 3; do
+  echo "=== 2.$attempt Ctrl+N: the desktop selects, the editor opens it"
+  if [[ -z "$GEOMETRY" ]] || ! kill -0 "$APP" 2> /dev/null; then
+    note "the application was not running for region attempt $attempt"
+    break
+  fi
+  xdotool key ctrl+n
+  sleep 8
+  if ! kill -0 "$APP" 2> /dev/null; then
+    note "the region capture killed the application (attempt $attempt)"
+    shot "2-$attempt-failed"
+    break
+  fi
+  shot "2-$attempt-editor"
+  screen_shows_fixture "2-$attempt-editor" \
+    || note "the editor is not showing what the portal returned (attempt $attempt)"
+  check_log "the region capture reported an error (attempt $attempt)"
+done
+stop
+
+# --- 3. a capture from the command line --------------------------------------
+
+echo "=== 3. --full --clipboard"
+# No window is ever shown, and the process exits 0 only once an image is on the
+# clipboard. Whether it survives the process needs a clipboard manager, which
+# is not this test's business; that it got there is.
+start clipboard --full --clipboard
+STATUS="timeout"
+for _ in $(seq 1 40); do
+  sleep 1
+  if ! kill -0 "$APP" 2> /dev/null; then
+    wait "$APP"; STATUS=$?
+    break
+  fi
+done
+APP=""
+[[ "$STATUS" == "0" ]] || note "snipper --full --clipboard exited $STATUS"
+check_log "the command-line capture reported an error"
+
+# --- 4. the region flow, from a cold start -----------------------------------
+
+echo "=== 4. --region from cold"
+start region --region
+BACK="$(await_window "$WINDOW*" 40)"
+if [[ -z "$BACK" ]]; then
+  note "--region never opened a window with the selection in it"
+  shot 4-failed
+else
+  sleep 4
+  shot 4-editor
+  screen_shows_fixture 4-editor \
+    || note "--region: the editor is not showing what the portal returned"
+fi
+check_log "--region reported an error"
+xwininfo -root -tree > "$OUT/windows.txt"
+stop
+
+# --- what happened -----------------------------------------------------------
+
+echo
+if (( ${#PROBLEMS[@]} == 0 )); then
+  echo "ok: it opens, captures from the window and from the command line"
+  exit 0
+fi
+echo "${#PROBLEMS[@]} problem(s):"
+printf '  %s\n' "${PROBLEMS[@]}"
+exit 1

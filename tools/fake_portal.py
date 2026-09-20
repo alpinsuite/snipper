@@ -84,7 +84,12 @@ class Portal(dbus.service.Object):
         SCREENSHOT, in_signature="sa{sv}", out_signature="o", sender_keyword="sender"
     )
     def Screenshot(self, parent_window, options, sender=None):  # noqa: N802
-        behaviour = SCRIPT[min(self._calls, len(SCRIPT) - 1)]
+        # The smoke test wants a portal that simply works, every time: it is
+        # driving the application, not this file's script of refusals.
+        if os.environ.get("FAKE_PORTAL_ALWAYS_OK"):
+            behaviour = "ok"
+        else:
+            behaviour = SCRIPT[min(self._calls, len(SCRIPT) - 1)]
         self._calls += 1
 
         token = str(options.get("handle_token", ""))

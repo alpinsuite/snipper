@@ -77,6 +77,34 @@ jobs:
           sudo apt-get install -y desktop-file-utils
           desktop-file-validate packaging/snipper.desktop
 
+      # The release binary, started on a real X server: it has to open, take a
+      # capture from the command line, and ask the desktop for a region three
+      # times over, with tools/fake_portal.py standing in for the desktop.
+      # Until this existed the Linux build had never been launched at all —
+      # only its capture channel had, by a test that draws no interface.
+      - name: It opens, and captures
+        env:
+          # Xvfb has no DRI3, so Mesa probes for a device, fails, and limps on.
+          # Asking for the software rasteriser outright skips the probe.
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: llvmpipe
+        run: |
+          sudo apt-get install -y xvfb x11-utils x11-apps x11-xserver-utils \
+                                  imagemagick xdotool libgl1-mesa-dri openbox \
+                                  dbus python3-dbus python3-gi
+          dbus-run-session -- \
+            xvfb-run -a -s "-screen 0 1400x900x24 -noreset +extension GLX +render" \
+              bash tools/smoke_linux.sh
+
+      # Kept whether or not the step above passed: a smoke test can say the
+      # window exists, and only a person can say it looks right.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snipper-linux-screenshot
+          path: build/smoke/
+          if-no-files-found: ignore
+
       - name: Software Bill of Materials
         # CycloneDX, resolved from pubspec.lock and written in the same job
         # that produced the binary, so it describes this build rather than
