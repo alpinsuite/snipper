@@ -138,6 +138,20 @@ void main() {
 
   setUp(build);
 
+  /// Waits until the desktop is frozen and a rectangle can be chosen.
+  ///
+  /// Not `pumpEventQueue`: that drains a fixed number of turns of the event
+  /// loop, and the capture on the way here decodes an image, which finishes on
+  /// an engine callback whenever the engine gets to it. On a busy machine that
+  /// is later than the turns run out, `selectRegion` finds nothing frozen and
+  /// returns, and the test then waits forever for a selection nobody made.
+  /// That is how this file timed out in CI about one run in three.
+  Future<void> untilSelecting() async {
+    while (controller.stage != CaptureStage.selecting) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+  }
+
   group('full screen', () {
     test('hands back the whole frame and never opens an overlay', () async {
       final snip = await controller.capture(
@@ -165,7 +179,7 @@ void main() {
       final pending = controller.capture(
         const CaptureRequest(mode: CaptureMode.region),
       );
-      await pumpEventQueue();
+      await untilSelecting();
 
       expect(controller.stage, CaptureStage.selecting);
       expect(overlay.enteredWith, const ui.Rect.fromLTWH(0, 0, 40, 30));
@@ -178,7 +192,7 @@ void main() {
       final pending = controller.capture(
         const CaptureRequest(mode: CaptureMode.region),
       );
-      await pumpEventQueue();
+      await untilSelecting();
 
       await controller.selectRegion(
         const ui.Rect.fromLTRB(5, 5, 25, 20),
@@ -205,7 +219,7 @@ void main() {
       final pending = controller.capture(
         const CaptureRequest(mode: CaptureMode.region),
       );
-      await pumpEventQueue();
+      await untilSelecting();
       await controller.selectRegion(
         const ui.Rect.fromLTRB(0, 0, 10, 10),
         shifted,
@@ -220,7 +234,7 @@ void main() {
       final pending = controller.capture(
         const CaptureRequest(mode: CaptureMode.region),
       );
-      await pumpEventQueue();
+      await untilSelecting();
 
       controller.cancel();
 
@@ -233,7 +247,7 @@ void main() {
       final pending = controller.capture(
         const CaptureRequest(mode: CaptureMode.region),
       );
-      await pumpEventQueue();
+      await untilSelecting();
 
       await controller.selectRegion(
         const ui.Rect.fromLTRB(10, 10, 11, 11),
@@ -399,7 +413,7 @@ void main() {
     final first = controller.capture(
       const CaptureRequest(mode: CaptureMode.region),
     );
-    await pumpEventQueue();
+    await untilSelecting();
 
     final second = await controller.capture(
       const CaptureRequest(mode: CaptureMode.region),
