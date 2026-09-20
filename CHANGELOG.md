@@ -59,5 +59,11 @@ First version. Everything below is new.
   If a capture fails on your desktop, the message says which part refused, and
   [an issue](https://github.com/alpinsuite/snipper/issues) with it in is the
   most useful thing you can send.
+- **On Linux a region is selected on one monitor.** The overlay fullscreens
+  onto the screen the window is on, so a selection cannot be dragged across
+  onto a second one. Covering the whole desktop means sizing the window by
+  hand, which the Flutter engine does not survive — the overlay comes up empty
+  and the first click ends the process. Full-screen capture still takes every
+  monitor. On Windows, which places its own overlay, a selection can cross.
 - **x86-64 Linux only.** There is no 32-bit and no ARM package, and nothing is
   published for Windows yet, though it builds and runs there.
