@@ -82,10 +82,20 @@ jobs:
       # through the overlay and back. Until this existed the Linux build had
       # never been launched at all — only its capture channel had.
       - name: It opens, and captures
+        env:
+          # Xvfb has no DRI3, so Mesa probes for a device, fails, and limps on.
+          # Asking for the software rasteriser outright skips the probe. The
+          # engine renders the first frame either way; what it would not do
+          # without this is render another one after the overlay resizes the
+          # window, which left a window the size of the screen with nothing in
+          # it and a segfault on the next click.
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: llvmpipe
         run: |
           sudo apt-get install -y xvfb x11-utils x11-apps x11-xserver-utils \
-                                  imagemagick xdotool
-          xvfb-run -a -s "-screen 0 1400x900x24 -noreset" bash tools/smoke_linux.sh
+                                  imagemagick xdotool libgl1-mesa-dri
+          xvfb-run -a -s "-screen 0 1400x900x24 -noreset +extension GLX +render" \
+            bash tools/smoke_linux.sh
 
       # Kept whether or not the step above passed: a smoke test can say the
       # window exists, and only a person can say it looks right.
