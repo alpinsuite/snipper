@@ -47,6 +47,16 @@ export XDG_CONFIG_HOME="$PWD/$OUT/xdg-config"
 ROOT_COLOUR="#1d5b7a"
 xsetroot -solid "$ROOT_COLOUR"
 
+# A window manager, because the application asks for its window to be resized
+# and then waits to be given what it asked for. With nobody managing the
+# screen those requests are answered by the X server alone, and the overlay
+# never gets a frame at its new size. Every desktop this ships to has one; a
+# bare Xvfb is the only place that does not.
+openbox &
+WM=$!
+trap 'kill "$WM" 2> /dev/null' EXIT
+sleep 2
+
 APP=""
 PROBLEMS=()
 note() { echo "::error::$1"; PROBLEMS+=("$1"); }
