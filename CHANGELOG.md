@@ -17,11 +17,18 @@ All notable changes to this project are documented here. The format follows
   editor. Closing that interface cancels quietly. A desktop with no portal
   installed says so, and names the package.
 
-  The X11 path is tested in CI against a real X server: the root window is
-  painted a known colour and the screenshot is checked pixel for pixel. **The
-  Wayland path has not been run on a real desktop yet.** It shares everything
-  after the screenshot arrives with the X11 path, but the conversation with the
-  portal itself is untested until somebody tries it under GNOME and KDE.
+  Both paths run in CI. X11 is tested against a real X server: the root window
+  is painted a known colour and the screenshot is checked pixel for pixel. The
+  Wayland path is tested against a stand-in for the portal that follows the
+  specification through every answer it allows — on time, before the call
+  returns, from a request path of its own choosing, a cancel, a refusal, and no
+  portal at all — and checks that the file the portal wrote is deleted. **What
+  no test here can show is that GNOME and KDE answer the way the specification
+  says**, so it still wants one capture on each before a release.
+
+  `SNIPPER_CAPTURE=portal` sends captures through the desktop even on an X
+  server, for a Wayland session reached through XWayland, where the X root
+  shows every native window black.
 - **A Debian package.** `packaging/build_deb.sh` builds
   `snipper_<version>_amd64.deb` with its dependencies computed from the binary,
   a launcher entry with capture actions, icons, a man page and AppStream
