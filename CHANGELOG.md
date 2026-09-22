@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-22
+
 ### Fixed
 
 - **Full-screen capture on GNOME under Wayland** — Ubuntu 24.04's default
@@ -28,7 +30,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **A real GNOME desktop in CI.** Every push runs GNOME Shell 46 headless with
+- **A real GNOME desktop in CI.** Every change runs GNOME Shell 46 headless with
   the portals Ubuntu 24.04 ships, and takes a full-screen capture from the
   dash, from the launcher's action, from a terminal and from a keyboard
   shortcut, answering GNOME's question for real — including Deny, and the way
