@@ -32,7 +32,8 @@ All notable changes to this project are documented here. The format follows
   the portals Ubuntu 24.04 ships, and takes a full-screen capture from the
   dash, from the launcher's action, from a terminal and from a keyboard
   shortcut, answering GNOME's question for real — including Deny, and the way
-  back. The released 0.1.0 goes through the same steps first, and fails.
+  back. The released 0.1.0 is put through the first of those beforehand, and
+  the job fails unless 0.1.0 does.
 
 ## [0.1.0] - 2026-09-20
 

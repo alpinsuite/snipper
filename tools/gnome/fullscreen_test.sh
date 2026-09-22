@@ -109,7 +109,9 @@ full_screen_key() {
   d keys ctrl+shift+n
 }
 
-# How many screenshots the portal has actually taken, as opposed to refused.
+# How many screenshots the portal has been asked for, and how many it has
+# actually taken rather than refused.
+asked_for() { grep -c "Handle Screenshot" "$OUT/portal.log"; }
 taken() { grep -c "Calling Screenshot with interactive=0" "$OUT/portal.log"; }
 
 # Watches for <seconds>, answering the first question the shell puts with
@@ -191,10 +193,17 @@ if [[ -n "$RELEASED" ]]; then
   entry "$RELEASED"
   d launch snipper.desktop || note "before: the shell could not launch the released Snipper"
   if await_window; then
+    REQUESTS="$(asked_for)"
+    SHOTS="$(taken)"
     d keys ctrl+shift+n
     watch before 8 Allow
-    if [[ -z "$ASKED" ]] && ! shows_capture before; then
-      echo "  reproduced: nobody was asked, and there is no capture"
+    # Failing as reported means asking the portal, being refused without the
+    # user being asked, and having nothing to show — not merely nothing
+    # happening, which is also what a key that went nowhere looks like.
+    echo "  the portal was asked $(( $(asked_for) - REQUESTS )) times and took $(( $(taken) - SHOTS )) screenshots"
+    if (( $(asked_for) - REQUESTS == 1 && $(taken) == SHOTS )) \
+      && [[ -z "$ASKED" ]] && ! shows_capture before; then
+      echo "  reproduced: refused without anybody being asked, and nothing captured"
     else
       note "before: the released Snipper did not fail as reported, so this rig proves nothing"
     fi

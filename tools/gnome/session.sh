@@ -123,6 +123,10 @@ if ! python3 "$HERE/desktop.py" ready --timeout 60; then
   tail -50 "$GNOME_OUT/gnome-shell.log"
   exit 1
 fi
+# The rig's keyboard, made now rather than on the first key a test presses:
+# mutter sets a new input device up on its input thread, in its own time,
+# and the keys pressed on it before then go nowhere.
+python3 "$HERE/desktop.py" keys shift
 
 # The portals, started by hand rather than by the bus so their logs can be
 # kept and made verbose. The backends first: the frontend looks for them as
