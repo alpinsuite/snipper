@@ -28,11 +28,15 @@ static constexpr char kEnumerateDisplays[] = "enumerateDisplays";
 static constexpr char kCaptureDesktop[] = "captureDesktop";
 static constexpr char kCaptureInteractive[] = "captureInteractive";
 static constexpr char kBackend[] = "backend";
+static constexpr char kScreenshotPermission[] = "screenshotPermission";
 
 static constexpr char kPortalBus[] = "org.freedesktop.portal.Desktop";
 static constexpr char kPortalPath[] = "/org/freedesktop/portal/desktop";
 static constexpr char kPortalScreenshot[] = "org.freedesktop.portal.Screenshot";
 static constexpr char kPortalRequest[] = "org.freedesktop.portal.Request";
+
+static constexpr char kStoreBus[] = "org.freedesktop.impl.portal.PermissionStore";
+static constexpr char kStorePath[] = "/org/freedesktop/impl/portal/PermissionStore";
 
 // SNIPPER_CAPTURE=portal asks the desktop even on an X server. It is how the
 // portal path is tested, since CI has an X server and no compositor, and it is
@@ -343,6 +347,220 @@ static void capture_portal(FlMethodCall* method_call, bool interactive) {
                          nullptr, portal_call_cb, request);
 }
 
+// --- what the desktop has been told -----------------------------------------
+
+// Undoes systemd's escaping of a unit name, in which each character a unit
+// name may not contain was written as \xNN.
+static gchar* unescape_unit_name(const gchar* escaped) {
+  GString* out = g_string_new(nullptr);
+  for (const gchar* c = escaped; *c != '\0'; c++) {
+    if (c[0] == '\\' && c[1] == 'x' && g_ascii_isxdigit(c[2]) &&
+        g_ascii_isxdigit(c[3])) {
+      g_string_append_c(out, static_cast<gchar>(g_ascii_xdigit_value(c[2]) * 16 +
+                                                g_ascii_xdigit_value(c[3])));
+      c += 3;
+    } else {
+      g_string_append_c(out, *c);
+    }
+  }
+  return g_string_free(out, FALSE);
+}
+
+// The name xdg-desktop-portal files this process's permissions under.
+//
+// A sandboxed application's identity comes from its sandbox. An unsandboxed
+// one like this has only the systemd unit it runs in, which whoever started it
+// chose: GNOME's launcher and its keyboard shortcuts both start it in
+// "app-gnome-snipper-<pid>.scope". The portal reads the application ID out of
+// that name, and nothing tells a client what it read, so the same reading is
+// done again here — systemd's way of finding a user unit in a cgroup path,
+// then the portal's two patterns. Empty when there is no such unit, as from a
+// terminal, which is also what the portal files it under.
+//
+// Only ever used to explain a refusal. A unit named in a way this does not
+// recognise costs a vaguer sentence, and nothing else.
+static gchar* portal_app_id() {
+  g_autofree gchar* cgroups = nullptr;
+  if (!g_file_get_contents("/proc/self/cgroup", &cgroups, nullptr, nullptr)) {
+    return g_strdup("");
+  }
+
+  // The unified hierarchy's line is "0::<path>".
+  const gchar* path = nullptr;
+  g_auto(GStrv) lines = g_strsplit(cgroups, "\n", -1);
+  for (gchar** line = lines; *line != nullptr; line++) {
+    if (g_str_has_prefix(*line, "0::")) path = *line + 3;
+  }
+  if (path == nullptr) return g_strdup("");
+
+  // Past any slices, past the user's own service manager, past any slices
+  // under it: what is left is the unit.
+  g_auto(GStrv) parts = g_strsplit(path, "/", -1);
+  gchar** part = parts;
+  auto skip_slices = [&part]() {
+    while (*part != nullptr &&
+           (**part == '\0' || g_str_has_suffix(*part, ".slice"))) {
+      part++;
+    }
+  };
+  skip_slices();
+  if (*part == nullptr || !g_str_has_prefix(*part, "user@") ||
+      !g_str_has_suffix(*part, ".service")) {
+    return g_strdup("");
+  }
+  part++;
+  skip_slices();
+  if (*part == nullptr || !g_str_has_prefix(*part, "app-")) return g_strdup("");
+
+  // app[-<launcher>]-<ApplicationID>-<RANDOM>.scope, or
+  // app[-<launcher>]-<ApplicationID>[@<RANDOM>].service, as
+  // https://systemd.io/DESKTOP_ENVIRONMENTS/ has them.
+  static const char* const kPatterns[] = {
+      "^app-(?:[[:alnum:]]+\\-)?(.+?)(?:\\-[[:alnum:]]*)(?:\\.scope|\\.slice)$",
+      "^app-(?:[[:alnum:]]+\\-)?(.+?)(?:@[[:alnum:]]*)?(?:\\.service|\\.slice)$",
+  };
+  for (const char* pattern : kPatterns) {
+    // Flags spelled as casts: the named zero values are newer than the GLib
+    // of the oldest release this is built for.
+    g_autoptr(GRegex) regex =
+        g_regex_new(pattern, static_cast<GRegexCompileFlags>(0),
+                    static_cast<GRegexMatchFlags>(0), nullptr);
+    g_autoptr(GMatchInfo) match = nullptr;
+    if (regex != nullptr &&
+        g_regex_match(regex, *part, static_cast<GRegexMatchFlags>(0),
+                      &match)) {
+      g_autofree gchar* escaped = g_match_info_fetch(match, 1);
+      return unescape_unit_name(escaped);
+    }
+  }
+  return g_strdup("");
+}
+
+// One question to the desktop about screenshot permission, answered in two
+// D-Bus calls: whether this desktop asks at all, then what it has been told.
+struct PermissionQuery {
+  FlMethodCall* method_call;
+  GDBusConnection* bus;
+  gchar* app_id;
+  bool asks_in_front;
+};
+
+static void permission_query_free(PermissionQuery* query) {
+  g_clear_object(&query->method_call);
+  g_clear_object(&query->bus);
+  g_free(query->app_id);
+  g_free(query);
+}
+
+static void permission_respond(PermissionQuery* query,
+                               const gchar* permission) {
+  g_autoptr(FlValue) answer = fl_value_new_map();
+  fl_value_set_string_take(answer, "app", fl_value_new_string(query->app_id));
+  fl_value_set_string_take(answer, "permission",
+                           fl_value_new_string(permission));
+  fl_value_set_string_take(answer, "asksInFront",
+                           fl_value_new_bool(query->asks_in_front));
+  fl_method_call_respond_success(query->method_call, answer, nullptr);
+  permission_query_free(query);
+}
+
+static void permission_lookup_cb(GObject* source, GAsyncResult* result,
+                                 gpointer user_data) {
+  PermissionQuery* query = static_cast<PermissionQuery*>(user_data);
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GVariant) reply =
+      g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error);
+
+  if (reply == nullptr) {
+    // Nothing decided yet is an error of the store's own; anything else means
+    // there is no store to ask.
+    g_autofree gchar* remote = g_dbus_error_get_remote_error(error);
+    permission_respond(
+        query, g_strcmp0(remote, "org.freedesktop.portal.Error.NotFound") == 0
+                   ? "unset"
+                   : "unknown");
+    return;
+  }
+
+  g_autoptr(GVariant) table = nullptr;
+  g_autoptr(GVariant) data = nullptr;
+  g_variant_get(reply, "(@a{sas}v)", &table, &data);
+  g_autofree const gchar** granted = nullptr;
+  if (g_variant_lookup(table, query->app_id, "^a&s", &granted) &&
+      granted[0] != nullptr) {
+    g_autofree gchar* permission = g_strdup(granted[0]);
+    permission_respond(query, permission);
+  } else {
+    permission_respond(query, "unset");
+  }
+}
+
+static void permission_lookup(PermissionQuery* query) {
+  // The table and entry the portal keeps these grants under. Two seconds, as
+  // for every call here: this is asked on the way to a capture, and must
+  // never be the reason one does not happen.
+  g_dbus_connection_call(
+      query->bus, kStoreBus, kStorePath, kStoreBus, "Lookup",
+      g_variant_new("(ss)", "screenshot", "screenshot"),
+      G_VARIANT_TYPE("(a{sas}v)"), G_DBUS_CALL_FLAGS_NONE, 2000, nullptr,
+      permission_lookup_cb, query);
+}
+
+static void gnome_screenshot_version_cb(GObject* source, GAsyncResult* result,
+                                        gpointer user_data) {
+  PermissionQuery* query = static_cast<PermissionQuery*>(user_data);
+  g_autoptr(GVariant) reply = g_dbus_connection_call_finish(
+      G_DBUS_CONNECTION(source), result, nullptr);
+  if (reply != nullptr) {
+    g_autoptr(GVariant) value = nullptr;
+    g_variant_get(reply, "(v)", &value);
+    query->asks_in_front = g_variant_is_of_type(value, G_VARIANT_TYPE_UINT32) &&
+                           g_variant_get_uint32(value) >= 2;
+  }
+  permission_lookup(query);
+}
+
+// Whether this desktop is one that asks the user before an application may
+// take a screenshot by itself, and asks only on behalf of the focused window.
+//
+// That is GNOME as Ubuntu 24.04 ships it: xdg-desktop-portal checks a
+// permission first, and GNOME Shell puts the question up — but only when the
+// application asking is the focused one. The portal makes that check only
+// when the desktop's screenshot backend is version 2 or later, so that is
+// what is read, from GNOME's own backend and only in a GNOME session. A
+// backend older than that, or another desktop's, asks nothing of this kind,
+// and the capture goes ahead with the window out of the way as it always has.
+static void handle_screenshot_permission(FlMethodCall* method_call) {
+  PermissionQuery* query = g_new0(PermissionQuery, 1);
+  query->method_call = FL_METHOD_CALL(g_object_ref(method_call));
+  query->app_id = portal_app_id();
+
+  query->bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+  if (query->bus == nullptr) {
+    permission_respond(query, "unknown");
+    return;
+  }
+
+  const gchar* desktop_names = g_getenv("XDG_CURRENT_DESKTOP");
+  g_auto(GStrv) desktops =
+      g_strsplit(desktop_names != nullptr ? desktop_names : "", ":", -1);
+  bool gnome = false;
+  for (gchar** desktop = desktops; *desktop != nullptr; desktop++) {
+    if (g_ascii_strcasecmp(*desktop, "GNOME") == 0) gnome = true;
+  }
+  if (!gnome) {
+    permission_lookup(query);
+    return;
+  }
+  g_dbus_connection_call(
+      query->bus, "org.freedesktop.impl.portal.desktop.gnome", kPortalPath,
+      "org.freedesktop.DBus.Properties", "Get",
+      g_variant_new("(ss)", "org.freedesktop.impl.portal.Screenshot",
+                    "version"),
+      G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, 2000, nullptr,
+      gnome_screenshot_version_cb, query);
+}
+
 // --- dispatch ---------------------------------------------------------------
 
 static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
@@ -362,6 +580,8 @@ static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
     }
   } else if (strcmp(name, kCaptureInteractive) == 0) {
     capture_portal(method_call, true);
+  } else if (strcmp(name, kScreenshotPermission) == 0) {
+    handle_screenshot_permission(method_call);
   } else {
     fl_method_call_respond_not_implemented(method_call, nullptr);
   }

@@ -6,6 +6,37 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-22
+
+### Fixed
+
+- **Full-screen capture on GNOME under Wayland** — Ubuntu 24.04's default
+  session — failed every time with "The desktop declined to take a
+  screenshot". GNOME asks once before an application may capture the whole
+  screen by itself, and GNOME Shell puts that question only on behalf of the
+  focused window. Snipper stepped out of the way first, so nobody was ever
+  asked. The first full-screen capture now keeps Snipper's window in front
+  while GNOME asks **Allow Snipper to Take Screenshots?**; after Allow the
+  capture is taken with the window out of the way, and GNOME does not ask
+  again. After Deny, Snipper says so, and gives the command that makes GNOME
+  ask again — GNOME's settings have no switch for it.
+- **GNOME now knows Snipper's window is Snipper's.** It was tracked as an
+  anonymous window, with no icon in the dock and nothing to ask a permission
+  on behalf of: the window's application ID matched no launcher entry.
+- **A capture started from the launcher or a keyboard shortcut says why it
+  failed.** `snipper --full` exited quietly when the desktop refused, which
+  looked exactly like the shortcut doing nothing; the window now opens on the
+  reason. With `--clipboard` the reason is printed and the exit status is 1.
+
+### Added
+
+- **A real GNOME desktop in CI.** Every change runs GNOME Shell 46 headless with
+  the portals Ubuntu 24.04 ships, and takes a full-screen capture from the
+  dash, from the launcher's action, from a terminal and from a keyboard
+  shortcut, answering GNOME's question for real — including Deny, and the way
+  back. The released 0.1.0 is put through the first of those beforehand, and
+  the job fails unless 0.1.0 does.
+
 ## [0.1.0] - 2026-09-20
 
 First version. Everything below is new.

@@ -35,6 +35,9 @@ class FakeOverlayWindow implements OverlayWindow {
 
   @override
   Future<void> showAfterCapture() async => calls.add('show');
+
+  @override
+  Future<void> bringToFront() async => calls.add('front');
 }
 
 class FakeCaptureService implements CaptureService {
@@ -42,12 +45,31 @@ class FakeCaptureService implements CaptureService {
     this.bounds = const ui.Rect.fromLTWH(0, 0, 40, 30),
     this.failWith,
     this.canDrawOwnOverlay = true,
-  });
+    this.consent = WholeScreenConsent.given,
+    List<Object>? answers,
+    this.template,
+  }) : _answers = answers ?? <Object>[];
 
   final ui.Rect bounds;
 
   /// When set, [captureVirtualDesktop] throws this instead of returning.
   final Object? failWith;
+
+  /// What [wholeScreenConsent] says.
+  final WholeScreenConsent consent;
+
+  /// What [captureVirtualDesktop] does, one call at a time, before it falls
+  /// back to [failWith] or a frame the size of [bounds]: a [ui.Size] is the
+  /// size of the frame handed back, and anything else is thrown.
+  final List<Object> _answers;
+
+  /// A frame already decoded, handed back as a clone, so a capture finishes
+  /// without waiting on the engine — which never comes inside `fakeAsync`.
+  final ui.Image? template;
+
+  /// Every frame handed out, in order, so a test can see which were thrown
+  /// away.
+  final List<ui.Image> frames = <ui.Image>[];
 
   int captures = 0;
 
@@ -73,13 +95,24 @@ class FakeCaptureService implements CaptureService {
   Future<VirtualDesktop> enumerateDisplays() async => _desktop();
 
   @override
+  Future<WholeScreenConsent> wholeScreenConsent() async => consent;
+
+  @override
   Future<CaptureResult> captureVirtualDesktop() async {
     captures++;
+    final answer = _answers.isEmpty ? null : _answers.removeAt(0);
+    if (answer != null && answer is! ui.Size) throw answer;
     final failure = failWith;
-    if (failure != null) throw failure;
+    if (answer == null && failure != null) throw failure;
+
+    final size = answer is ui.Size ? answer : bounds.size;
+    final frame =
+        template?.clone() ??
+        await _image(size.width.toInt(), size.height.toInt());
+    frames.add(frame);
     return CaptureResult(
-      frame: await _image(bounds.width.toInt(), bounds.height.toInt()),
-      bounds: bounds,
+      frame: frame,
+      bounds: bounds.topLeft & size,
       desktop: _desktop(),
     );
   }
@@ -126,12 +159,18 @@ void main() {
     Object? failWith,
     ui.Rect? bounds,
     bool canDrawOwnOverlay = true,
+    WholeScreenConsent consent = WholeScreenConsent.given,
+    List<Object>? answers,
+    ui.Image? template,
   }) {
     overlay = FakeOverlayWindow();
     service = FakeCaptureService(
       failWith: failWith,
       bounds: bounds ?? const ui.Rect.fromLTWH(0, 0, 40, 30),
       canDrawOwnOverlay: canDrawOwnOverlay,
+      consent: consent,
+      answers: answers,
+      template: template,
     );
     controller = CaptureController(service: service, overlay: overlay);
   }
@@ -317,6 +356,142 @@ void main() {
     );
   });
 
+  // GNOME, as Ubuntu 24.04 ships it: before an application may take a
+  // screenshot by itself the desktop asks the user once, and GNOME Shell puts
+  // the question only on behalf of the focused window. Asked from behind a
+  // hidden window, it refuses without asking anyone — which is what Snipper
+  // 0.1.0 did, and why it could not capture the whole screen on Ubuntu 24.04.
+  group('a desktop that asks first', () {
+    test('is asked with the window in front, before it steps aside', () async {
+      build(
+        consent: WholeScreenConsent.askInFront,
+        answers: <Object>[const ui.Size(99, 99)],
+      );
+
+      final snip = await controller.capture(
+        const CaptureRequest(mode: CaptureMode.fullScreen),
+      );
+
+      expect(overlay.calls.take(2), <String>['front', 'hide']);
+      expect(service.captures, 2);
+      // What is kept is the capture taken with the window out of the way; the
+      // one taken while asking has the window in it, and is thrown away.
+      expect(snip!.width, 40);
+      expect(service.frames.first.debugDisposed, isTrue);
+      expect(controller.stage, CaptureStage.idle);
+    });
+
+    test('a no is reported, and nothing is taken behind it', () async {
+      build(
+        consent: WholeScreenConsent.askInFront,
+        answers: <Object>[const CaptureRefused('the user said no')],
+      );
+
+      final snip = await controller.capture(
+        const CaptureRequest(mode: CaptureMode.fullScreen),
+      );
+
+      expect(snip, isNull);
+      expect(controller.failure, 'the user said no');
+      expect(controller.stage, CaptureStage.failed);
+      expect(service.captures, 1);
+      expect(overlay.calls, isNot(contains('hide')));
+      expect(overlay.calls, contains('leave'));
+    });
+
+    test('is asked before a countdown, not after it', () async {
+      // Decoded here, outside the fake clock, which the engine does not keep.
+      final template = await _image(40, 30);
+      addTearDown(template.dispose);
+
+      fakeAsync((async) {
+        build(consent: WholeScreenConsent.askInFront, template: template);
+        final stages = <CaptureStage>[];
+        controller.addListener(() => stages.add(controller.stage));
+
+        final pending = controller.capture(
+          const CaptureRequest(
+            mode: CaptureMode.fullScreen,
+            delay: Duration(seconds: 3),
+          ),
+        );
+        async.flushMicrotasks();
+        async.elapse(const Duration(seconds: 4));
+        async.flushMicrotasks();
+
+        expect(
+          stages.indexOf(CaptureStage.asking),
+          lessThan(stages.indexOf(CaptureStage.arming)),
+        );
+        expect(overlay.calls.first, 'front');
+        expect(service.captures, 2);
+        pending.ignore();
+      });
+    });
+
+    test('a refusal from behind the window brings it forward once', () async {
+      // The records said yes and the desktop refused anyway: the question is
+      // put in front, and the capture taken again with the window aside.
+      build(
+        answers: <Object>[
+          const CaptureRefused('nobody was asked'),
+          const ui.Size(99, 99),
+        ],
+      );
+
+      final snip = await controller.capture(
+        const CaptureRequest(mode: CaptureMode.fullScreen),
+      );
+
+      expect(service.captures, 3);
+      expect(overlay.calls.where((call) => call == 'front'), hasLength(1));
+      expect(snip!.width, 40);
+      expect(service.frames.first.debugDisposed, isTrue);
+    });
+
+    test('a second refusal is the answer, and is not asked again', () async {
+      build(
+        answers: <Object>[
+          const CaptureRefused('nobody was asked'),
+          const CaptureRefused('the user said no'),
+        ],
+      );
+
+      await controller.capture(
+        const CaptureRequest(mode: CaptureMode.fullScreen),
+      );
+
+      expect(controller.failure, 'the user said no');
+      expect(service.captures, 2);
+    });
+
+    test('a desktop already told no is not asked in front', () async {
+      build(
+        consent: WholeScreenConsent.refused,
+        answers: <Object>[const CaptureRefused('told no before')],
+      );
+
+      await controller.capture(
+        const CaptureRequest(mode: CaptureMode.fullScreen),
+      );
+
+      expect(overlay.calls, isNot(contains('front')));
+      expect(controller.failure, 'told no before');
+      expect(service.captures, 1);
+    });
+
+    test('a region the desktop selects needs no asking', () async {
+      // The user chooses the moment of those, in the desktop's own interface.
+      build(canDrawOwnOverlay: false, consent: WholeScreenConsent.askInFront);
+
+      await controller.capture(const CaptureRequest(mode: CaptureMode.region));
+
+      expect(overlay.calls, isNot(contains('front')));
+      expect(service.desktopSelections, 1);
+      expect(service.captures, 0);
+    });
+  });
+
   group('failure', () {
     test('a refused capture is reported and the window comes back', () async {
       build(failWith: const CaptureException('the display server said no'));
@@ -369,6 +544,9 @@ void main() {
             delay: Duration(seconds: 3),
           ),
         );
+        // The desktop is asked first whether it will hand the screen over,
+        // which is a round trip to the platform even when the answer is yes.
+        async.flushMicrotasks();
 
         expect(controller.stage, CaptureStage.arming);
         expect(controller.secondsRemaining, 3);

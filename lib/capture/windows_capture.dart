@@ -36,6 +36,11 @@ class WindowsCaptureService implements CaptureService {
         'Windows leaves region selection to the application.',
       );
 
+  /// GDI hands the screen to any process that asks, and asks nobody.
+  @override
+  Future<WholeScreenConsent> wholeScreenConsent() async =>
+      WholeScreenConsent.given;
+
   @override
   Future<VirtualDesktop> enumerateDisplays() async {
     final displays = <Display>[];

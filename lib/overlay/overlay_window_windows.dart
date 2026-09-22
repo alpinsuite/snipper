@@ -63,4 +63,12 @@ class WindowsOverlayWindow implements OverlayWindow {
     await windowManager.show();
     await windowManager.focus();
   }
+
+  /// Nothing on Windows asks: GDI hands over the screen without a question,
+  /// so a capture is never refused for want of a window to ask on behalf of.
+  /// Kept honest all the same — whatever [hideFromCapture] did is undone.
+  @override
+  Future<void> bringToFront() async {
+    await showAfterCapture();
+  }
 }

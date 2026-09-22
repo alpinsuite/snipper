@@ -19,6 +19,13 @@ import 'capture_service.dart';
 /// anything, because [canDrawOwnOverlay] is a synchronous question and the
 /// answer decides how a region gets selected. That is read from the
 /// environment, the same way GDK itself decides.
+///
+/// And under GNOME, whether the desktop has to ask the user first. A capture
+/// of the whole screen is one the user did not choose the moment of, so the
+/// portal asks once whether this application may take those — and GNOME Shell
+/// asks only on behalf of the focused window. [wholeScreenConsent] reads what
+/// has been recorded so the controller can ask while the window is in front;
+/// `tools/gnome/fullscreen_test.sh` is where that was found, and is checked.
 class LinuxCaptureService implements CaptureService {
   LinuxCaptureService({
     this.channel = const MethodChannel(channelName),
@@ -111,7 +118,15 @@ class LinuxCaptureService implements CaptureService {
       _capture('captureInteractive');
 
   Future<CaptureResult> _capture(String method) async {
-    final raw = await _invoke<Map<Object?, Object?>>(method);
+    final Map<Object?, Object?> raw;
+    try {
+      raw = await _invoke<Map<Object?, Object?>>(method);
+    } on CaptureRefused {
+      // Only a capture whose moment the user did not choose needs the
+      // desktop's permission, so only then is there more to say than no.
+      if (method != 'captureDesktop') rethrow;
+      throw CaptureRefused(await _whyRefused(), cause: 'portal-refused');
+    }
     final frame = RasterFrame(
       width: raw['width']! as int,
       height: raw['height']! as int,
@@ -159,6 +174,83 @@ class LinuxCaptureService implements CaptureService {
     }
   }
 
+  /// An X server hands its root window to anyone who asks. Under Wayland the
+  /// portal decides, and the runner reads what it has recorded — see
+  /// `handle_screenshot_permission` in `linux/runner/capture_channel.cc`.
+  @override
+  Future<WholeScreenConsent> wholeScreenConsent() async {
+    if (!isWayland) return WholeScreenConsent.given;
+    final recorded = await _recordedPermission();
+    return switch (recorded.permission) {
+      'yes' => WholeScreenConsent.given,
+      'no' => WholeScreenConsent.refused,
+      _ =>
+        recorded.asksInFront
+            ? WholeScreenConsent.askInFront
+            : WholeScreenConsent.given,
+    };
+  }
+
+  /// What the portal has recorded about this application taking screenshots
+  /// by itself, under the name it knows the application by, and whether this
+  /// desktop asks only on behalf of the focused window.
+  ///
+  /// Never throws: it is asked on the way to every capture of the whole
+  /// screen, and not knowing is an answer — the capture goes ahead and the
+  /// desktop says what it says.
+  Future<({String app, String permission, bool asksInFront})>
+  _recordedPermission() async {
+    try {
+      final answer = await channel.invokeMethod<Map<Object?, Object?>>(
+        'screenshotPermission',
+      );
+      return (
+        app: answer?['app'] as String? ?? '',
+        permission: answer?['permission'] as String? ?? 'unknown',
+        asksInFront: answer?['asksInFront'] as bool? ?? false,
+      );
+    } on PlatformException {
+      // Not knowing, below.
+    } on MissingPluginException {
+      // Likewise: a runner from before the question existed.
+    }
+    return (app: '', permission: 'unknown', asksInFront: false);
+  }
+
+  /// What to say once the desktop has refused the whole screen even with this
+  /// window in front to ask on behalf of — which leaves two explanations, and
+  /// the portal's permission store says which.
+  ///
+  /// Under GNOME a "no" is remembered and never asked again, and GNOME's
+  /// settings have no switch for an application installed from a package, so
+  /// the way back is spelt out in full. Region captures are unaffected either
+  /// way: the user chooses those in the desktop's own interface, and the
+  /// portal only asks about the ones taken without them.
+  Future<String> _whyRefused() async {
+    final recorded = await _recordedPermission();
+    if (recorded.permission == 'no') {
+      return 'Your desktop has been told not to let Snipper take screenshots '
+          'by itself, so it no longer asks. Region captures still work. To be '
+          'asked again, run:\n\n${forgetPermissionCommand(recorded.app)}';
+    }
+    return 'The desktop did not let Snipper capture the whole screen. If it '
+        'is asking whether Snipper may take screenshots, answer it, then try '
+        'again.';
+  }
+
+  /// The command that removes a remembered "no", so the desktop asks again.
+  ///
+  /// `gdbus` because it is on every GNOME desktop, which `flatpak` is not.
+  /// The application ID is quoted as a GVariant string, because the empty ID
+  /// — every unsandboxed application the portal cannot name — is otherwise no
+  /// argument at all.
+  static String forgetPermissionCommand(String app) =>
+      'gdbus call --session '
+      '--dest org.freedesktop.impl.portal.PermissionStore '
+      '--object-path /org/freedesktop/impl/portal/PermissionStore '
+      '--method org.freedesktop.impl.portal.PermissionStore.DeletePermission '
+      "screenshot screenshot \"'$app'\"";
+
   Future<T> _invoke<T>(String method) async {
     try {
       final result = await channel.invokeMethod<T>(method);
@@ -168,6 +260,12 @@ class LinuxCaptureService implements CaptureService {
       return result;
     } on PlatformException catch (error) {
       if (error.code == 'cancelled') throw const CaptureCancelled();
+      if (error.code == 'portal-refused') {
+        throw CaptureRefused(
+          error.message ?? 'The desktop declined to take a screenshot.',
+          cause: error.code,
+        );
+      }
       throw CaptureException(
         error.message ?? 'The desktop would not take a screenshot.',
         cause: error.code,

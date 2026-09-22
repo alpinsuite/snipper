@@ -1,0 +1,6 @@
+{
+  "uuid": "snipper-rig@alpinsuite.test",
+  "name": "Snipper test rig",
+  "description": "Turns on unsafe mode so tools/gnome/desktop.py can look at and press what the shell draws. For a throwaway CI session only.",
+  "shell-version": ["45", "46", "47", "48", "49"]
+}

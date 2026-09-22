@@ -20,6 +20,10 @@ enum CaptureStage {
   /// The platform is being asked for pixels.
   capturing,
 
+  /// The desktop is asking the user whether this application may take
+  /// screenshots, and the window is in front so that it can.
+  asking,
+
   /// The frozen desktop is on screen and a rectangle is being dragged out.
   selecting,
 
@@ -74,6 +78,18 @@ class CaptureController extends ChangeNotifier {
     _failure = null;
 
     try {
+      // First, and before any countdown: whether the desktop will hand the
+      // whole screen over once this window has stepped aside. Where it will
+      // not until it has asked the user, the question is put now, while the
+      // window is still in front to be asked on behalf of. A countdown is
+      // time the user meant for arranging the screen, not for answering it.
+      var consent = WholeScreenConsent.given;
+      if (request.mode == CaptureMode.fullScreen || service.canDrawOwnOverlay) {
+        _setStage(CaptureStage.capturing);
+        consent = await service.wholeScreenConsent();
+        if (consent == WholeScreenConsent.askInFront) await _askInFront();
+      }
+
       if (request.delay > Duration.zero) {
         if (!await _armAndWait(request.delay)) return null;
       }
@@ -91,7 +107,9 @@ class CaptureController extends ChangeNotifier {
         return Snip(image: chosen.frame, source: chosen.bounds);
       }
 
-      final result = await service.captureVirtualDesktop();
+      final result = await _captureDesktop(
+        mayAsk: consent == WholeScreenConsent.given,
+      );
       // Before anything is drawn: on Windows this clears the
       // exclude-from-capture flag, and leaving it set would make the overlay
       // invisible to every other screenshot tool — including whichever one is
@@ -176,6 +194,48 @@ class CaptureController extends ChangeNotifier {
     if (_stage != CaptureStage.failed) return;
     _failure = null;
     _setStage(CaptureStage.idle);
+  }
+
+  /// Puts the desktop's question to the user, with this window in front so
+  /// that the desktop will put it.
+  ///
+  /// GNOME — 46 on Ubuntu 24.04, where this was found — asks once before an
+  /// application may take a screenshot whose moment the user did not choose,
+  /// and GNOME Shell puts the question
+  /// only on behalf of the focused window. Asked from behind a hidden one it
+  /// refuses before anyone has been asked — at once when some other window
+  /// has the focus, and after 25 seconds when none has — and that refusal is
+  /// what Snipper 0.1.0 reported, every time.
+  ///
+  /// There is no asking without capturing, so the answer comes back as a
+  /// capture: yes is a picture of the screen with this window in it, which is
+  /// thrown away, and no is a [CaptureRefused] that ends the capture and says
+  /// why. After a yes the desktop remembers, and does not ask again.
+  Future<void> _askInFront() async {
+    _setStage(CaptureStage.asking);
+    await overlay.bringToFront();
+    final asked = await service.captureVirtualDesktop();
+    asked.frame.dispose();
+  }
+
+  /// The whole desktop, with this window out of the way.
+  ///
+  /// [mayAsk] is for a desktop that was expected not to ask and refused
+  /// anyway — its records said yes and no longer do, or were read wrongly.
+  /// Then the question is put once, in front, and the capture tried again;
+  /// the cost is up to 25 seconds of GNOME's waiting first, which is why
+  /// asking is otherwise done before the window ever steps aside. Never a
+  /// loop: a second refusal is the user's answer, and is reported.
+  Future<CaptureResult> _captureDesktop({required bool mayAsk}) async {
+    try {
+      return await service.captureVirtualDesktop();
+    } on CaptureRefused {
+      if (!mayAsk) rethrow;
+      await _askInFront();
+      _setStage(CaptureStage.capturing);
+      await overlay.hideFromCapture();
+      return service.captureVirtualDesktop();
+    }
   }
 
   /// Counts down with the window already out of the way, so whatever is being

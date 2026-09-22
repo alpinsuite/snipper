@@ -4,7 +4,7 @@ publish_to: "none"
 
 # Single source of truth for the application version. `tools/set_version.ps1`
 # propagates it to `lib/core/app_version.dart`.
-version: 0.1.0+1
+version: 0.1.1+2
 
 # Matches the toolchain CI pins and the one the kit is developed against.
 environment:

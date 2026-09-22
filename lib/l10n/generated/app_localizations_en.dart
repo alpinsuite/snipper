@@ -137,6 +137,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get captureFailed => 'Could not take the screenshot';
 
   @override
+  String get askingTitle => 'Waiting for your desktop';
+
+  @override
+  String get askingBody =>
+      'Before Snipper can capture the whole screen, your desktop asks once whether to allow it. Choose Allow to take the capture.';
+
+  @override
   String get captureNew => 'New';
 
   @override

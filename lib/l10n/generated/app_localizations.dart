@@ -340,6 +340,18 @@ abstract class AppLocalizations {
   /// **'Could not take the screenshot'**
   String get captureFailed;
 
+  /// Shown in the window while the desktop asks whether Snipper may take screenshots by itself
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for your desktop'**
+  String get askingTitle;
+
+  /// Explains the desktop's permission question, which appears on top of this window. Allow is the desktop's own button label.
+  ///
+  /// In en, this message translates to:
+  /// **'Before Snipper can capture the whole screen, your desktop asks once whether to allow it. Choose Allow to take the capture.'**
+  String get askingBody;
+
   /// No description provided for @captureNew.
   ///
   /// In en, this message translates to:

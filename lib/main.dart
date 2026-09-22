@@ -148,7 +148,7 @@ Future<void> _fromHotkey(
 /// With `--clipboard` the process exits as soon as the image is on the
 /// clipboard and the window is never shown — which is the shape a desktop
 /// shortcut wants. Without it, the window appears with the snip open, ready to
-/// be marked up.
+/// be marked up — or, if the capture failed, with the reason.
 Future<void> _fromCommandLine(
   CaptureRunner runner,
   StartupRequest startup,
@@ -164,16 +164,26 @@ Future<void> _fromCommandLine(
     open: !startup.copyAndExit,
   );
 
+  // Why it failed, if it did. Null for a cancel as well as for a success: a
+  // cancel is somebody changing their mind and has nothing to report.
+  final failure = runner.captures.failure;
+
   if (startup.copyAndExit) {
     // Nothing was opened and nothing is on screen, so there is nothing to keep
     // the process around for. A cancelled capture exits the same way, so a
-    // shortcut pressed by mistake does not leave a window behind.
+    // shortcut pressed by mistake does not leave a window behind. A failure
+    // says why on the way out, for whoever is reading the terminal or the
+    // journal.
+    if (failure != null) stderr.writeln('snipper: $failure');
     exit(snip == null ? 1 : 0);
   }
 
-  if (snip == null) {
+  if (snip == null && failure == null) {
     exit(0);
   }
+  // With the snip open, or with the reason there is none. A launcher action
+  // that fails has no terminal to print to, and exiting quietly there looks
+  // exactly like the shortcut doing nothing at all.
   await windowManager.show();
   await windowManager.focus();
 }

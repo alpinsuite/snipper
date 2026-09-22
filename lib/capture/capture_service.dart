@@ -24,6 +24,36 @@ class CaptureException implements Exception {
       'CaptureException: $message${cause == null ? '' : ' ($cause)'}';
 }
 
+/// The desktop said no, and did not say why.
+///
+/// xdg-desktop-portal gives the same answer when the user refused, when it
+/// could not put the question to the user at all, and when the user took too
+/// long to answer. The second is why this has a type of its own. GNOME — 46 on
+/// Ubuntu 24.04, where this was found — asks once before an application may
+/// take a screenshot without the user choosing the moment, and GNOME Shell
+/// asks only on behalf of the focused window, so a request made from behind a
+/// hidden window is refused before anyone has been asked. The controller
+/// answers that by asking with the window in front; [message] is what to say
+/// if that does not help either.
+class CaptureRefused extends CaptureException {
+  const CaptureRefused(super.message, {super.cause});
+}
+
+/// Whether the desktop will hand over the whole screen to a window that has
+/// stepped out of the way.
+enum WholeScreenConsent {
+  /// Yes: the platform never asks, or the desktop has been told yes already.
+  given,
+
+  /// Not until it has asked the user, and it asks only on behalf of the
+  /// focused window, as GNOME does. So the question has to be put while this
+  /// window is still in front, and before it steps aside for the capture.
+  askInFront,
+
+  /// The user was asked and said no, and the desktop will not ask again.
+  refused,
+}
+
 /// The user backed out of a selection the desktop was running.
 ///
 /// Only the portal path can raise it: there the region is chosen in the
@@ -59,7 +89,17 @@ abstract class CaptureService {
   /// Returns the frame together with the physical rectangle it covers, because
   /// the two are useless apart: the rectangle's origin is what turns a screen
   /// coordinate into an index into these pixels, and it is routinely negative.
+  ///
+  /// Throws [CaptureRefused] when the desktop will not hand it over, which
+  /// under GNOME can mean it had nobody to ask; see there.
   Future<CaptureResult> captureVirtualDesktop();
+
+  /// Whether [captureVirtualDesktop] will be answered once this window has
+  /// stepped aside, or has to be asked while it is still in front.
+  ///
+  /// Asked before every capture of the whole desktop, so it is a question to
+  /// the desktop's records and never to the user.
+  Future<WholeScreenConsent> wholeScreenConsent();
 
   /// Whether this platform lets the application put its own window over the
   /// desktop to run the selection.
