@@ -87,6 +87,14 @@ gsettings set org.gnome.shell enabled-extensions "['$UUID']"
 # The welcome tour is a modal dialog of its own, and it would be the first
 # thing any screenshot showed.
 gsettings set org.gnome.shell welcome-dialog-last-shown-version '999'
+# One flat colour for a wallpaper, so a capture of the desktop can be told
+# from anything else by its colour alone. Tests read it from here.
+export GNOME_RIG_WALLPAPER="#1d5b7a"
+gsettings set org.gnome.desktop.background picture-uri ''
+gsettings set org.gnome.desktop.background picture-uri-dark ''
+gsettings set org.gnome.desktop.background picture-options 'none'
+gsettings set org.gnome.desktop.background color-shading-type 'solid'
+gsettings set org.gnome.desktop.background primary-color "$GNOME_RIG_WALLPAPER"
 
 gnome-shell --headless --virtual-monitor 1280x800 --no-x11 \
   > "$GNOME_OUT/gnome-shell.log" 2>&1 &

@@ -38,7 +38,8 @@ jobs:
             xdg-desktop-portal xdg-desktop-portal-gnome xdg-desktop-portal-gtk \
             dbus dbus-bin dbus-daemon python3-gi gir1.2-glib-2.0 \
             libgl1-mesa-dri libegl-mesa0 libgbm1 librsvg2-common \
-            fonts-cantarell fonts-dejavu-core adwaita-icon-theme
+            fonts-cantarell fonts-dejavu-core adwaita-icon-theme \
+            imagemagick gir1.2-gtk-3.0
 
       - name: The user's systemd, which the dash starts applications under
         run: |
@@ -58,16 +59,16 @@ jobs:
           tar -xzf build/released/*.tar.gz -C build/released
           find build/released -name snipper -type f -perm -u+x
 
-      - name: Ask GNOME for the whole screen, every way Snipper does
+      - name: Capture the whole screen, every way a person asks
         timeout-minutes: 15
         run: |
           SNIPPER_RELEASED="$(find build/released -name snipper -type f -perm -u+x | head -1)" \
-            bash tools/gnome/session.sh bash tools/gnome/investigate.sh
+            bash tools/gnome/session.sh bash tools/gnome/fullscreen_test.sh
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gnome-investigation
+          name: snipper-gnome-fullscreen
           path: build/gnome/
           if-no-files-found: ignore
           # The rig's HOME is all dot-directories: dconf, the permission

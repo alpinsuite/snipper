@@ -4,8 +4,12 @@
 Every subcommand is one short conversation over the session bus, so a shell
 script can interleave them with the application under test:
 
-    desktop.py ready [--timeout S]      wait until the shell answers Eval
+    desktop.py ready [--timeout S]      wait until the shell answers Eval and
+                                        has finished starting up
+    desktop.py idle [--timeout S]       wait until nothing is modal
     desktop.py wait-name NAME           wait until NAME is owned on the bus
+    desktop.py property DEST PATH INTERFACE NAME
+                                        read one D-Bus property
     desktop.py shot FILE                photograph the whole screen
     desktop.py state                    focus, windows, and any shell dialog
     desktop.py click LABEL              press every visible button so labelled
@@ -93,15 +97,27 @@ const _GLib = typeof GLib !== 'undefined' ? GLib : _gi.GLib;
 """
 
 
+# Leaves the overview and says whether the desktop is now idle: no overview,
+# nothing modal. The shell opens on the overview when it has no windows, at
+# the very end of starting up, and while it is open no window can take the
+# focus — which is exactly the thing under test.
+LEAVE_OVERVIEW_JS = """
+(() => {
+  if (Main.layoutManager._startingUp) return false;
+  if (Main.overview.visible) Main.overview.hide();
+  return !Main.overview.visible && Main.modalCount === 0;
+})()
+"""
+
+
 def cmd_ready(args):
     deadline = time.monotonic() + args.timeout
     last = None
     while time.monotonic() < deadline:
         try:
-            if shell_eval("global.context.unsafe_mode") is True:
-                # The shell opens on the overview when there are no windows,
-                # which is not what anyone sees after logging in to Ubuntu.
-                shell_eval("Main.overview.hide(); true")
+            if shell_eval("global.context.unsafe_mode") is True and shell_eval(
+                LEAVE_OVERVIEW_JS
+            ):
                 return 0
         except (GLib.Error, RuntimeError, ValueError) as error:
             last = error
@@ -266,12 +282,15 @@ def cmd_keys(args):
     return 0
 
 
+# What clicking the application in the dash does: launch it, and leave the
+# overview if that is where the click came from.
 LAUNCH_JS = _PRELUDE + """
 ((id, action) => {
   const app = _Shell.AppSystem.get_default().lookup_app(id);
   if (!app) return false;
   if (action) app.launch_action(action, global.get_current_time(), -1);
   else app.launch(global.get_current_time(), -1, _Shell.AppLaunchGpu.APP_PREF);
+  Main.overview.hide();
   return true;
 })(%s, %s)
 """
@@ -382,6 +401,29 @@ def cmd_portal(args):
     return 0 if outcome.get("response") == 0 else 1
 
 
+def cmd_idle(args):
+    """Waits until nothing is modal and the overview is closed."""
+    deadline = time.monotonic() + args.timeout
+    while time.monotonic() < deadline:
+        if shell_eval(LEAVE_OVERVIEW_JS):
+            return 0
+        time.sleep(0.3)
+    return 1
+
+
+def cmd_property(args):
+    (value,) = call(
+        args.dest,
+        args.path,
+        "org.freedesktop.DBus.Properties",
+        "Get",
+        GLib.Variant("(ss)", (args.interface, args.name)),
+        "(v)",
+    )
+    print(value)
+    return 0
+
+
 def cmd_permissions(args):
     try:
         entries, _data = call(
@@ -452,6 +494,17 @@ def main():
     p.add_argument("--timeout", type=float, default=30)
     p.add_argument("--keep", help="move the portal's file here instead of deleting it")
     p.set_defaults(run=cmd_portal)
+
+    p = sub.add_parser("idle")
+    p.add_argument("--timeout", type=float, default=10)
+    p.set_defaults(run=cmd_idle)
+
+    p = sub.add_parser("property")
+    p.add_argument("dest")
+    p.add_argument("path")
+    p.add_argument("interface")
+    p.add_argument("name")
+    p.set_defaults(run=cmd_property)
 
     p = sub.add_parser("permissions")
     p.set_defaults(run=cmd_permissions)
