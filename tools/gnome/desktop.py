@@ -197,12 +197,15 @@ def cmd_state(args):
     return 0
 
 
+# By GType name: the shell replaces every actor's toString with its own
+# description, so the class cannot be read off the string.
 CLICK_JS = """
 ((label) => {
   const hits = [];
   const walk = actor => {
     if (!actor.visible) return;
-    if (actor.label === label && String(actor).includes('St.Button')) hits.push(actor);
+    if (actor.constructor?.$gtype?.name === 'StButton' && actor.label === label)
+      hits.push(actor);
     actor.get_children().forEach(walk);
   };
   walk(global.stage);

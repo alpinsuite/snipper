@@ -3,19 +3,24 @@
 # What a real GNOME desktop does when Snipper asks it for the whole screen,
 # case by case. Runs inside tools/gnome/session.sh:
 #
-#   bash tools/gnome/session.sh bash tools/gnome/investigate.sh [binary]
+#   SNIPPER_RELEASED=path/to/an/older/snipper \
+#     bash tools/gnome/session.sh bash tools/gnome/investigate.sh
 #
 # Nothing here passes or fails. Each case prints what the portal answered,
 # what the shell put on screen while it was deciding, and what the permission
 # store says afterwards; the screenshots and every log land in $GNOME_OUT.
+#
+# The binaries come in through the environment, not the command line: every
+# Snipper is stopped with `pkill -f` between cases, and a path on this
+# script's own command line would stop the script.
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 
-BINARY="$PWD/${1:-build/linux/x64/release/bundle/snipper}"
+BUILD="$(realpath "${SNIPPER_BUILD:-build/linux/x64/release/bundle/snipper}")"
+RELEASED="${SNIPPER_RELEASED:+$(realpath "$SNIPPER_RELEASED")}"
 OUT="$GNOME_OUT"
-USER_RT="${GNOME_RIG_USER_RUNTIME_DIR:-}"
-[[ -n "$USER_RT" ]] || USER_RT="/run/user/$(id -u)"
+USER_RT="$GNOME_RIG_USER_RUNTIME_DIR"
 
 d() { python3 tools/gnome/desktop.py "$@"; }
 
@@ -23,15 +28,6 @@ echo "=== versions"
 dpkg-query -W -f='${Package} ${Version}\n' gnome-shell mutter-common \
   xdg-desktop-portal xdg-desktop-portal-gnome xdg-desktop-portal-gtk \
   libglib2.0-0t64 2> /dev/null
-echo "=== which backend answers which portal"
-for f in /usr/share/xdg-desktop-portal/*.conf /usr/share/xdg-desktop-portal/portals/*.portal; do
-  echo "--- $f"
-  cat "$f"
-done
-echo "=== the runner's own systemd, which the launcher's scopes need"
-echo "this shell's cgroup: $(cat /proc/self/cgroup)"
-env XDG_RUNTIME_DIR="$USER_RT" DBUS_SESSION_BUS_ADDRESS="unix:path=$USER_RT/bus" \
-  systemctl --user is-system-running 2>&1
 
 # Runs a command in app-gnome-snipper-<n>.scope, which is what GNOME's
 # launcher puts an application it starts in, and where xdg-desktop-portal
@@ -46,28 +42,40 @@ in_scope() {
 
 # Snipper's desktop entry, installed so the shell can launch it the way the
 # dash does: through a wrapper that takes the same scope, so both halves of
-# the desktop agree on who is asking — the shell by process id, the portal by
-# unit name.
+# the desktop agree on who is asking — the shell by the window's entry, the
+# portal by unit name. `entry <binary>` points it at one build or the other.
 LAUNCHER="$HOME/snipper-from-the-dash.sh"
-cat > "$LAUNCHER" << EOF
+entry() {
+  cat > "$LAUNCHER" << EOF
 #!/bin/bash
 exec env XDG_RUNTIME_DIR="$USER_RT" DBUS_SESSION_BUS_ADDRESS="unix:path=$USER_RT/bus" \\
   systemd-run --user --scope --quiet --unit="app-gnome-snipper-\$\$" \\
   env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \\
-  "$BINARY" "\$@" >> "$OUT/snipper-launched.log" 2>&1
+  "$1" "\$@" >> "$OUT/snipper-launched.log" 2>&1
 EOF
-chmod +x "$LAUNCHER"
-mkdir -p "$XDG_DATA_HOME/applications"
+  chmod +x "$LAUNCHER"
+}
+entry "$BUILD"
 sed -e "s|^Exec=snipper|Exec=$LAUNCHER|" packaging/snipper.desktop \
   > "$XDG_DATA_HOME/applications/snipper.desktop"
 sleep 2
 
 # Stops every Snipper, however it was started.
 reap() {
-  pkill -f "$BINARY" 2> /dev/null
+  pkill -f "/snipper( |$)" 2> /dev/null
   sleep 1
-  pkill -9 -f "$BINARY" 2> /dev/null
+  pkill -9 -f "/snipper( |$)" 2> /dev/null
   return 0
+}
+
+# Answers whatever the shell is still asking, so a case starts with nothing on
+# screen. A dialog nobody answers stays up after the portal has given up on
+# it, and the shell refuses to show another until it goes.
+dismiss() {
+  if d state | grep -q '"dialog": \["'; then
+    d click Deny > /dev/null
+    sleep 1
+  fi
 }
 
 # Watches for <seconds>. Records the shell's state every second; the first
@@ -80,110 +88,132 @@ watch() {
     echo "$state" >> "$OUT/$name-states.jsonl"
     if [[ "$state" == *'"dialog": ["'* ]] && (( seen == 0 )); then
       seen=1
-      echo "  t+${i}s the shell shows: $(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["dialog"])' "$state")"
+      echo "  t+${i}s the shell asks: $(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["dialog"][0])' "$state")"
       d shot "$OUT/$name-dialog.png" > /dev/null
       if [[ -n "$press" ]]; then
+        sleep 1
         echo "  pressed $press: $(d click "$press" 2>&1)"
       fi
     fi
   done
-  (( seen )) || echo "  the shell showed no dialog in ${seconds}s"
+  (( seen )) || echo "  the shell asked nothing in ${seconds}s"
 }
 
 summary() {
-  python3 - "$1" << 'EOF'
+  python3 - "$(d state)" << 'EOF'
 import json, sys
 s = json.loads(sys.argv[1])
-print("  focus:", s["focusApp"], "| modal:", s["modalCount"], "| overview:", s["overview"])
+print("  focus:", s["focusApp"], "| dialogs:", s["modalCount"])
 for w in s["windows"]:
-    print("  window: %r app=%s class=%s focused=%s frame=%s" % (
-        w["title"], w["app"], w["wmClass"], w["focused"], w["frame"]))
+    print("  window %r: app=%s class=%s gapplication=%s focused=%s" % (
+        w["title"], w["app"], w["wmClass"], w["gtkAppId"], w["focused"]))
 EOF
 }
 
+# Waits for a window called Snipper, and says whether it has the focus.
+await_window() {
+  local i
+  for i in $(seq 1 30); do
+    sleep 1
+    if d state | grep -q '"title": "Snipper"'; then
+      sleep 3
+      return 0
+    fi
+  done
+  echo "  no Snipper window after 30s"
+  return 1
+}
+
+fresh() {
+  reap
+  dismiss
+  d forget
+}
+
 echo
-echo "=== A. a process the portal cannot name asks for the whole screen"
-d forget
-d portal --timeout 25 > "$OUT/A.json" &
+echo "=== A. a request the portal cannot put a name to"
+fresh
+d portal --timeout 20 > "$OUT/A.json" &
 P=$!
-watch A 8 Allow
+watch A 5 Allow
 wait "$P"
 echo "  portal: $(cat "$OUT/A.json")"
 echo "  stored: $(d permissions)"
 
 echo
-echo "=== B. the same request, from the scope the dash starts applications in"
-d forget
-in_scope python3 tools/gnome/desktop.py portal --timeout 25 > "$OUT/B.json" &
+echo "=== B. a request as 'snipper', from the dash's scope, nothing focused"
+fresh
+in_scope python3 tools/gnome/desktop.py portal --timeout 20 > "$OUT/B.json" &
 P=$!
-watch B 8 Allow
+watch B 5 Allow
 wait "$P"
 echo "  portal: $(cat "$OUT/B.json")"
 echo "  stored: $(d permissions)"
+summary
 
 echo
-echo "=== C. the launcher's 'Capture the Whole Screen', first time"
-d forget
-d launch snipper.desktop full
-watch C 20 Allow
-d shot "$OUT/C-end.png" > /dev/null
-summary "$(d state)"
-echo "  stored: $(d permissions)"
-reap
-
-echo
-echo "=== D. Snipper open and focused, full screen from its own window, first time"
-d forget
+echo "=== C. the same request, while this build's window has the focus"
+fresh
 d launch snipper.desktop
-for _ in $(seq 1 30); do
-  sleep 1
-  d state | grep -q '"title": "Snipper"' && break
-done
-sleep 3
-d shot "$OUT/D-window.png" > /dev/null
-summary "$(d state)"
-d keys ctrl+shift+n
-watch D 20 Allow
-d shot "$OUT/D-end.png" > /dev/null
-summary "$(d state)"
+await_window
+summary
+d shot "$OUT/C-window.png" > /dev/null
+in_scope python3 tools/gnome/desktop.py portal --timeout 20 > "$OUT/C.json" &
+P=$!
+watch C 6 Allow
+wait "$P"
+echo "  portal: $(cat "$OUT/C.json")"
 echo "  stored: $(d permissions)"
 reap
 
+if [[ -n "$RELEASED" ]]; then
+  echo
+  echo "=== D. Snipper 0.1.0 from the dash, then Ctrl+Shift+N"
+  fresh
+  entry "$RELEASED"
+  d launch snipper.desktop
+  await_window
+  summary
+  d keys ctrl+shift+n
+  watch D 12 Allow
+  d shot "$OUT/D-end.png" > /dev/null
+  summary
+  echo "  stored: $(d permissions)"
+
+  echo
+  echo "=== E. Snipper 0.1.0's 'Capture the Whole Screen' from the launcher"
+  fresh
+  d launch snipper.desktop full
+  watch E 12 Allow
+  d shot "$OUT/E-end.png" > /dev/null
+  summary
+  echo "  still running: $(pgrep -f "$RELEASED" > /dev/null && echo yes || echo no)"
+  entry "$BUILD"
+fi
+
 echo
-echo "=== E. the launcher's 'Capture the Whole Screen', permission already stored"
-d forget
+echo "=== F. this build from the dash, then Ctrl+Shift+N"
+fresh
+d launch snipper.desktop
+await_window
+summary
+d keys ctrl+shift+n
+watch F 12 Allow
+d shot "$OUT/F-end.png" > /dev/null
+summary
+echo "  stored: $(d permissions)"
+
+echo
+echo "=== G. this build's 'Capture the Whole Screen', permission stored"
+fresh
 d grant snipper yes
 d launch snipper.desktop full
-watch E 15
-d shot "$OUT/E-end.png" > /dev/null
-summary "$(d state)"
-reap
-
-echo
-echo "=== F. snipper --full from a terminal, first time"
-d forget
-"$BINARY" --full >> "$OUT/snipper-F.log" 2>&1 &
-watch F 20 Allow
-d shot "$OUT/F-end.png" > /dev/null
-summary "$(d state)"
-echo "  stored: $(d permissions)"
-reap
-
-echo
-echo "=== G. snipper --full from a terminal, after the user said no"
-d forget
-d grant "" no
-"$BINARY" --full >> "$OUT/snipper-G.log" 2>&1 &
-G=$!
-watch G 10
+watch G 12
 d shot "$OUT/G-end.png" > /dev/null
-summary "$(d state)"
-if kill -0 "$G" 2> /dev/null; then echo "  still running"; else wait "$G"; echo "  exited $?"; fi
+summary
 reap
 
 echo
-echo "=== the portal's own account of it"
-grep -iE "access|screenshot|permission|denied|fail|warn" "$OUT/portal.log" | tail -60
-echo "=== the shell's"
-grep -iE "access|screenshot|portal|error|denied" "$OUT/gnome-shell.log" | tail -40
+echo "=== the portal's account of it"
+grep -E "Handle Screenshot|permission|access dialog|Calling Screenshot" "$OUT/portal.log" | tail -40
 exit 0

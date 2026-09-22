@@ -47,9 +47,22 @@ jobs:
           ls -la "/run/user/$(id -u)" || true
           XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user is-system-running || true
 
+      # The binary people have, next to this build.
+      - name: Snipper 0.1.0, as released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build/released
+          gh release download v0.1.0 -R "${{ github.repository }}" \
+            -p 'snipper-0.1.0-linux-x64.tar.gz' -D build/released
+          tar -xzf build/released/*.tar.gz -C build/released
+          find build/released -name snipper -type f -perm -u+x
+
       - name: Ask GNOME for the whole screen, every way Snipper does
         timeout-minutes: 15
-        run: bash tools/gnome/session.sh bash tools/gnome/investigate.sh
+        run: |
+          SNIPPER_RELEASED="$(find build/released -name snipper -type f -perm -u+x | head -1)" \
+            bash tools/gnome/session.sh bash tools/gnome/investigate.sh
 
       - uses: actions/upload-artifact@v4
         if: always()
