@@ -253,5 +253,161 @@ void main() {
         throwsA(isA<CaptureException>()),
       );
     });
+
+    Object? refuse(MethodCall call, {required String permission}) =>
+        switch (call.method) {
+          'screenshotPermission' => <String, Object?>{
+            'app': 'snipper',
+            'permission': permission,
+            'asksInFront': true,
+          },
+          _ => throw PlatformException(
+            code: 'portal-refused',
+            message: 'The desktop declined to take a screenshot.',
+          ),
+        };
+
+    test(
+      'a whole screen refused after a no says how to be asked again',
+      () async {
+        // GNOME remembers a no and never asks again, and its settings have no
+        // switch for an application installed from a package.
+        answer = (call) => refuse(call, permission: 'no');
+        await expectLater(
+          LinuxCaptureService().captureVirtualDesktop(),
+          throwsA(
+            isA<CaptureRefused>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('no longer asks'),
+                contains('Region captures still work'),
+                contains(
+                  LinuxCaptureService.forgetPermissionCommand('snipper'),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'a whole screen refused otherwise says to answer the question',
+      () async {
+        answer = (call) => refuse(call, permission: 'unset');
+        await expectLater(
+          LinuxCaptureService().captureVirtualDesktop(),
+          throwsA(
+            isA<CaptureRefused>().having(
+              (error) => error.message,
+              'message',
+              contains('answer it, then try again'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test('a refused region is refused, and nothing is looked up', () async {
+      // The user chose that capture in the desktop's own interface; no
+      // permission was involved, so there is none to explain.
+      answer = (call) => refuse(call, permission: 'no');
+      await expectLater(
+        LinuxCaptureService().captureSelectedByDesktop(),
+        throwsA(
+          isA<CaptureRefused>().having(
+            (error) => error.message,
+            'message',
+            'The desktop declined to take a screenshot.',
+          ),
+        ),
+      );
+      expect(calls, isNot(contains('screenshotPermission')));
+    });
+
+    test('the way back names the application, and works for none', () {
+      expect(
+        LinuxCaptureService.forgetPermissionCommand('snipper'),
+        endsWith("DeletePermission screenshot screenshot \"'snipper'\""),
+      );
+      // The empty name — every unsandboxed application the portal cannot
+      // name — has to survive the shell as an argument of its own.
+      expect(
+        LinuxCaptureService.forgetPermissionCommand(''),
+        endsWith("DeletePermission screenshot screenshot \"''\""),
+      );
+    });
+  });
+
+  group('whether the desktop will hand the whole screen over', () {
+    const wayland = <String, String>{'WAYLAND_DISPLAY': 'wayland-0'};
+
+    Future<WholeScreenConsent> consentWith(
+      Map<String, Object?> recorded, {
+      Map<String, String> environment = wayland,
+    }) {
+      answer = (_) => recorded;
+      return LinuxCaptureService(environment: environment).wholeScreenConsent();
+    }
+
+    test('an X server hands it over, and nothing is asked', () async {
+      final consent = await consentWith(
+        <String, Object?>{'permission': 'no', 'asksInFront': true},
+        environment: const <String, String>{'DISPLAY': ':0'},
+      );
+      expect(consent, WholeScreenConsent.given);
+      expect(calls, isEmpty);
+    });
+
+    test('a recorded yes is given', () async {
+      expect(
+        await consentWith(<String, Object?>{
+          'permission': 'yes',
+          'asksInFront': true,
+        }),
+        WholeScreenConsent.given,
+      );
+    });
+
+    test('a recorded no is refused', () async {
+      expect(
+        await consentWith(<String, Object?>{
+          'permission': 'no',
+          'asksInFront': true,
+        }),
+        WholeScreenConsent.refused,
+      );
+    });
+
+    test('nothing recorded, where GNOME asks for the focused window', () async {
+      expect(
+        await consentWith(<String, Object?>{
+          'permission': 'unset',
+          'asksInFront': true,
+        }),
+        WholeScreenConsent.askInFront,
+      );
+    });
+
+    test('nothing recorded, where the desktop asks by itself', () async {
+      // Ubuntu 22.04's GNOME, and every other desktop: they show a dialog of
+      // their own on the capture itself, and need no window in front for it.
+      expect(
+        await consentWith(<String, Object?>{
+          'permission': 'unset',
+          'asksInFront': false,
+        }),
+        WholeScreenConsent.given,
+      );
+    });
+
+    test('a runner that cannot say is taken at its capture', () async {
+      messenger.setMockMethodCallHandler(channel, null);
+      expect(
+        await LinuxCaptureService(environment: wayland).wholeScreenConsent(),
+        WholeScreenConsent.given,
+      );
+    });
   });
 }

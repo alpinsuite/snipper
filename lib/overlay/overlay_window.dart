@@ -38,4 +38,10 @@ abstract class OverlayWindow {
 
   /// Undoes [hideFromCapture].
   Future<void> showAfterCapture();
+
+  /// Puts the window back in front, in the middle of a capture, and waits
+  /// until it has the focus — so the desktop can ask the user something on
+  /// its behalf. GNOME Shell asks for a permission only for the focused
+  /// window. The next [hideFromCapture] steps it aside again.
+  Future<void> bringToFront();
 }

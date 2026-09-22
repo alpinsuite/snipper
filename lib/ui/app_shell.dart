@@ -65,6 +65,12 @@ class _Stage extends StatelessWidget {
         child: _Failure(message: failure),
       );
     }
+    if (captures.stage == CaptureStage.asking) {
+      return ColoredBox(
+        color: theme.palette.background,
+        child: const _Asking(),
+      );
+    }
     if (!shot.hasSnip) {
       return ColoredBox(
         color: theme.palette.background,
@@ -129,6 +135,42 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+/// The window while the desktop asks whether Snipper may capture the screen.
+///
+/// The window has come forward in the middle of a capture, and the desktop's
+/// question is on top of it; this says why both happened, since neither was
+/// the user's doing. It shows once, the first time, and after that the desktop
+/// remembers the answer.
+class _Asking extends StatelessWidget {
+  const _Asking();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.slate;
+    final l10n = AppLocalizations.of(context);
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SlateIcon(SlateIcons.lock, size: 44, color: theme.palette.inkDim),
+            const SizedBox(height: 14),
+            Text(l10n.askingTitle, style: theme.titleStyle),
+            const SizedBox(height: 6),
+            Text(
+              l10n.askingBody,
+              textAlign: TextAlign.center,
+              style: theme.dimTextStyle,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// A capture that did not happen, and why.
 ///
 /// Shown in the window rather than as a dialog: everything that fails here is
@@ -160,7 +202,9 @@ class _Failure extends StatelessWidget {
             const SizedBox(height: 12),
             Text(l10n.captureFailed, style: theme.titleStyle),
             const SizedBox(height: 6),
-            Text(
+            // Selectable, because some of these end in a command to run: the
+            // way back from a desktop that has been told no.
+            SelectableText(
               message,
               textAlign: TextAlign.center,
               style: theme.dimTextStyle,

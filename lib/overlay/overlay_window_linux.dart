@@ -107,4 +107,19 @@ class LinuxOverlayWindow implements OverlayWindow {
     await windowManager.show();
     await windowManager.focus();
   }
+
+  @override
+  Future<void> bringToFront() async {
+    _hidden = false;
+    await windowManager.show();
+    await windowManager.focus();
+    // Mapped is not focused. The compositor hands the focus over a moment
+    // later, and a question asked before then is refused as if the window
+    // were still hidden. GTK knows when it arrives; two seconds is the limit,
+    // after which the desktop is asked regardless and says what it says.
+    for (var i = 0; i < 40; i++) {
+      if (await windowManager.isFocused()) return;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+  }
 }
