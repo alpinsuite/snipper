@@ -199,8 +199,9 @@ class CaptureController extends ChangeNotifier {
   /// Puts the desktop's question to the user, with this window in front so
   /// that the desktop will put it.
   ///
-  /// GNOME, from 45, asks once before an application may take a screenshot
-  /// whose moment the user did not choose, and GNOME Shell puts the question
+  /// GNOME — 46 on Ubuntu 24.04, where this was found — asks once before an
+  /// application may take a screenshot whose moment the user did not choose,
+  /// and GNOME Shell puts the question
   /// only on behalf of the focused window. Asked from behind a hidden one it
   /// refuses before anyone has been asked — at once when some other window
   /// has the focus, and after 25 seconds when none has — and that refusal is

@@ -28,12 +28,13 @@ class CaptureException implements Exception {
 ///
 /// xdg-desktop-portal gives the same answer when the user refused, when it
 /// could not put the question to the user at all, and when the user took too
-/// long to answer. The second is why this has a type of its own. GNOME 45 and
-/// later ask once before an application may take a screenshot without the user
-/// choosing the moment, and GNOME Shell asks only on behalf of the focused
-/// window — so a request made from behind a hidden window is refused before
-/// anyone has been asked. The controller answers that by asking again with the
-/// window in front; [message] is what to say if that does not help either.
+/// long to answer. The second is why this has a type of its own. GNOME — 46 on
+/// Ubuntu 24.04, where this was found — asks once before an application may
+/// take a screenshot without the user choosing the moment, and GNOME Shell
+/// asks only on behalf of the focused window, so a request made from behind a
+/// hidden window is refused before anyone has been asked. The controller
+/// answers that by asking with the window in front; [message] is what to say
+/// if that does not help either.
 class CaptureRefused extends CaptureException {
   const CaptureRefused(super.message, {super.cause});
 }
@@ -45,7 +46,7 @@ enum WholeScreenConsent {
   given,
 
   /// Not until it has asked the user, and it asks only on behalf of the
-  /// focused window — GNOME from 45. So the question has to be put while this
+  /// focused window, as GNOME does. So the question has to be put while this
   /// window is still in front, and before it steps aside for the capture.
   askInFront,
 

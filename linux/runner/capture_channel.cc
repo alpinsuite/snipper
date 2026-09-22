@@ -523,13 +523,13 @@ static void gnome_screenshot_version_cb(GObject* source, GAsyncResult* result,
 // Whether this desktop is one that asks the user before an application may
 // take a screenshot by itself, and asks only on behalf of the focused window.
 //
-// That is GNOME from 45, where xdg-desktop-portal checks a permission first
-// and GNOME Shell puts the question up — but only when the application asking
-// is the focused one. The permission check happens only when the desktop's
-// screenshot backend is version 2 or later, so that is what is read, from
-// GNOME's own backend and only in a GNOME session. Older GNOME, like Ubuntu
-// 22.04's, shows a dialog of its own on every capture, and needs no window in
-// front for it; so does every other desktop's.
+// That is GNOME as Ubuntu 24.04 ships it: xdg-desktop-portal checks a
+// permission first, and GNOME Shell puts the question up — but only when the
+// application asking is the focused one. The portal makes that check only
+// when the desktop's screenshot backend is version 2 or later, so that is
+// what is read, from GNOME's own backend and only in a GNOME session. A
+// backend older than that, or another desktop's, asks nothing of this kind,
+// and the capture goes ahead with the window out of the way as it always has.
 static void handle_screenshot_permission(FlMethodCall* method_call) {
   PermissionQuery* query = g_new0(PermissionQuery, 1);
   query->method_call = FL_METHOD_CALL(g_object_ref(method_call));

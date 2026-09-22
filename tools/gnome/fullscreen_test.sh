@@ -182,18 +182,24 @@ echo "  GNOME's screenshot backend is version $(d property \
   org.freedesktop.impl.portal.Screenshot version 2>&1)"
 
 if [[ -n "$RELEASED" ]]; then
+  # Expected to fail, as it failed for the people who reported it. If it ever
+  # stops failing here, this rig can no longer tell a broken build from a
+  # fixed one, and every pass below means nothing.
   echo
   echo "=== before: Snipper as released, from the dash, Ctrl+Shift+N"
   fresh
   entry "$RELEASED"
-  d launch snipper.desktop
-  await_window || echo "  no window"
-  d keys ctrl+shift+n
-  watch before 8 Allow
-  d shot "$OUT/before.png" > /dev/null
-  echo "  recorded: $(stored)"
-  if [[ -z "$ASKED" ]]; then
-    echo "  as reported: nobody was asked, and the capture was refused"
+  d launch snipper.desktop || note "before: the shell could not launch the released Snipper"
+  if await_window; then
+    d keys ctrl+shift+n
+    watch before 8 Allow
+    if [[ -z "$ASKED" ]] && ! shows_capture before; then
+      echo "  reproduced: nobody was asked, and there is no capture"
+    else
+      note "before: the released Snipper did not fail as reported, so this rig proves nothing"
+    fi
+  else
+    note "before: the released Snipper opened no window"
   fi
   entry "$BUILD"
 fi

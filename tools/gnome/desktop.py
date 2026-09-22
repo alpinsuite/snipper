@@ -297,11 +297,16 @@ LAUNCH_JS = _PRELUDE + """
 
 
 def cmd_launch(args):
-    launched = shell_eval(LAUNCH_JS % (json.dumps(args.id), json.dumps(args.action)))
-    if not launched:
-        print("the shell knows no application %s" % args.id, file=sys.stderr)
-        return 1
-    return 0
+    # A desktop entry installed a moment ago is not known to the shell until
+    # it has rescanned, which it does in its own time.
+    deadline = time.monotonic() + args.timeout
+    while True:
+        if shell_eval(LAUNCH_JS % (json.dumps(args.id), json.dumps(args.action))):
+            return 0
+        if time.monotonic() > deadline:
+            print("the shell knows no application %s" % args.id, file=sys.stderr)
+            return 1
+        time.sleep(0.5)
 
 
 def png_size(path):
@@ -487,6 +492,7 @@ def main():
     p = sub.add_parser("launch")
     p.add_argument("id")
     p.add_argument("action", nargs="?", default=None)
+    p.add_argument("--timeout", type=float, default=20)
     p.set_defaults(run=cmd_launch)
 
     p = sub.add_parser("portal")

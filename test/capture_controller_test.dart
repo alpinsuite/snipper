@@ -356,11 +356,11 @@ void main() {
     );
   });
 
-  // GNOME, from 45: before an application may take a screenshot by itself the
-  // desktop asks the user once, and GNOME Shell puts the question only on
-  // behalf of the focused window. Asked from behind a hidden window, it
-  // refuses without asking anyone — which is what Snipper 0.1.0 did, and why
-  // it could not capture the whole screen on Ubuntu 24.04.
+  // GNOME, as Ubuntu 24.04 ships it: before an application may take a
+  // screenshot by itself the desktop asks the user once, and GNOME Shell puts
+  // the question only on behalf of the focused window. Asked from behind a
+  // hidden window, it refuses without asking anyone — which is what Snipper
+  // 0.1.0 did, and why it could not capture the whole screen on Ubuntu 24.04.
   group('a desktop that asks first', () {
     test('is asked with the window in front, before it steps aside', () async {
       build(

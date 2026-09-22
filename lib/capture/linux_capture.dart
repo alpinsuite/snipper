@@ -19,6 +19,13 @@ import 'capture_service.dart';
 /// anything, because [canDrawOwnOverlay] is a synchronous question and the
 /// answer decides how a region gets selected. That is read from the
 /// environment, the same way GDK itself decides.
+///
+/// And under GNOME, whether the desktop has to ask the user first. A capture
+/// of the whole screen is one the user did not choose the moment of, so the
+/// portal asks once whether this application may take those — and GNOME Shell
+/// asks only on behalf of the focused window. [wholeScreenConsent] reads what
+/// has been recorded so the controller can ask while the window is in front;
+/// `tools/gnome/fullscreen_test.sh` is where that was found, and is checked.
 class LinuxCaptureService implements CaptureService {
   LinuxCaptureService({
     this.channel = const MethodChannel(channelName),
