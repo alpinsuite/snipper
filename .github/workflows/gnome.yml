@@ -1,0 +1,59 @@
+name: GNOME
+
+# An investigation, not a gate: what a real GNOME desktop does when Snipper
+# asks it for a screenshot. Runs on pushes to its own branch only.
+on:
+  push:
+    branches: [linux-fullscreen-gnome]
+
+env:
+  FLUTTER_VERSION: 3.44.8
+
+jobs:
+  gnome:
+    name: Screen capture on GNOME 46 (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Native toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config \
+                                  libgtk-3-dev liblzma-dev
+
+      - run: flutter pub get
+      - run: flutter build linux --release
+
+      - name: GNOME Shell and the portals an Ubuntu desktop runs
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            gnome-shell gsettings-desktop-schemas \
+            dconf-gsettings-backend dconf-service \
+            xdg-desktop-portal xdg-desktop-portal-gnome xdg-desktop-portal-gtk \
+            dbus dbus-bin dbus-daemon python3-gi gir1.2-glib-2.0 \
+            libgl1-mesa-dri libegl-mesa0 libgbm1 \
+            fonts-cantarell fonts-dejavu-core adwaita-icon-theme
+
+      - name: The user's systemd, which the dash starts applications under
+        run: |
+          sudo loginctl enable-linger "$USER" || true
+          sudo systemctl start "user@$(id -u).service" || true
+          ls -la "/run/user/$(id -u)" || true
+          XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user is-system-running || true
+
+      - name: Ask GNOME for the whole screen, every way Snipper does
+        timeout-minutes: 15
+        run: bash tools/gnome/session.sh bash tools/gnome/investigate.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gnome-investigation
+          path: build/gnome/
+          if-no-files-found: ignore
