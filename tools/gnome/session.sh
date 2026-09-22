@@ -28,43 +28,46 @@ export GNOME_OUT="${GNOME_OUT:-$PWD/build/gnome}"
 mkdir -p "$GNOME_OUT"
 GNOME_OUT="$(cd "$GNOME_OUT" && pwd)"
 
-# A bus of our own first, then everything below runs on it.
+# The environment is set up before the bus exists, not after. Anything the bus
+# starts on demand — dconf above all — inherits the environment the bus itself
+# was started with, and a dconf that writes to one HOME while the shell reads
+# from another is a setting that silently never arrives.
 if [[ -z "${GNOME_RIG_BUS:-}" ]]; then
+  # The desktop's own home, so gsettings, dconf and the permission store write
+  # here and nowhere else.
+  export HOME="$GNOME_OUT/home"
+  export XDG_CONFIG_HOME="$HOME/.config"
+  export XDG_DATA_HOME="$HOME/.local/share"
+  export XDG_CACHE_HOME="$HOME/.cache"
+  export XDG_STATE_HOME="$HOME/.local/state"
+  rm -rf "$HOME"
+  mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
+  # Before the shell starts, so it watches the directory for desktop entries
+  # a test installs later.
+  mkdir -p "$XDG_DATA_HOME/applications"
+
+  # The runtime directory the real one would be, for the Wayland socket. The
+  # real one is remembered: a test that needs the user's systemd — to start a
+  # process the way the shell's launcher does — has to be able to reach it.
+  export GNOME_RIG_USER_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  XDG_RUNTIME_DIR="$(mktemp -d /tmp/gnome-rig.XXXXXX)"
+  export XDG_RUNTIME_DIR
+  chmod 700 "$XDG_RUNTIME_DIR"
+
+  # What an Ubuntu desktop session says about itself. xdg-desktop-portal
+  # reads XDG_CURRENT_DESKTOP to decide which backend answers which portal.
+  export XDG_SESSION_TYPE=wayland
+  export XDG_CURRENT_DESKTOP=ubuntu:GNOME
+  export XDG_SESSION_DESKTOP=ubuntu
+  unset DISPLAY WAYLAND_DISPLAY
+
+  # No GPU on a runner. Mesa's software rasteriser, asked for outright.
+  export LIBGL_ALWAYS_SOFTWARE=1
+  export GALLIUM_DRIVER=llvmpipe
+
   export GNOME_RIG_BUS=1
   exec dbus-run-session -- bash "$0" "$@"
 fi
-
-# The desktop's own home, so gsettings, dconf and the permission store write
-# here and nowhere else.
-export HOME="$GNOME_OUT/home"
-export XDG_CONFIG_HOME="$HOME/.config"
-export XDG_DATA_HOME="$HOME/.local/share"
-export XDG_CACHE_HOME="$HOME/.cache"
-export XDG_STATE_HOME="$HOME/.local/state"
-rm -rf "$HOME"
-mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
-# Before the shell starts, so it watches the directory for desktop entries a
-# test installs later.
-mkdir -p "$XDG_DATA_HOME/applications"
-
-# The runtime directory the real one would be, for the Wayland socket. The
-# real one is remembered: a test that needs the user's systemd — to start a
-# process the way the shell's launcher does — has to be able to reach it.
-export GNOME_RIG_USER_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}"
-XDG_RUNTIME_DIR="$(mktemp -d /tmp/gnome-rig.XXXXXX)"
-export XDG_RUNTIME_DIR
-chmod 700 "$XDG_RUNTIME_DIR"
-
-# What an Ubuntu desktop session says about itself. xdg-desktop-portal reads
-# XDG_CURRENT_DESKTOP to decide which backend answers which portal.
-export XDG_SESSION_TYPE=wayland
-export XDG_CURRENT_DESKTOP=ubuntu:GNOME
-export XDG_SESSION_DESKTOP=ubuntu
-unset DISPLAY WAYLAND_DISPLAY
-
-# No GPU on a runner. Mesa's software rasteriser, asked for outright.
-export LIBGL_ALWAYS_SOFTWARE=1
-export GALLIUM_DRIVER=llvmpipe
 
 PIDS=()
 cleanup() {

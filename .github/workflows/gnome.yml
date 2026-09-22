@@ -37,7 +37,7 @@ jobs:
             dconf-gsettings-backend dconf-service \
             xdg-desktop-portal xdg-desktop-portal-gnome xdg-desktop-portal-gtk \
             dbus dbus-bin dbus-daemon python3-gi gir1.2-glib-2.0 \
-            libgl1-mesa-dri libegl-mesa0 libgbm1 \
+            libgl1-mesa-dri libegl-mesa0 libgbm1 librsvg2-common \
             fonts-cantarell fonts-dejavu-core adwaita-icon-theme
 
       - name: The user's systemd, which the dash starts applications under
@@ -57,3 +57,6 @@ jobs:
           name: gnome-investigation
           path: build/gnome/
           if-no-files-found: ignore
+          # The rig's HOME is all dot-directories: dconf, the permission
+          # store's database, the installed desktop entry.
+          include-hidden-files: true

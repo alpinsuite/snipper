@@ -107,6 +107,22 @@ def cmd_ready(args):
             last = error
         time.sleep(0.5)
     print("the shell never answered: %s" % last, file=sys.stderr)
+    # Which is almost always the rig's extension not running. The shell will
+    # say why through an interface that needs no unsafe mode.
+    uuid = "snipper-rig@alpinsuite.test"
+    for method, reply in (("GetExtensionInfo", "(a{sv})"), ("GetExtensionErrors", "(as)")):
+        try:
+            (answer,) = call(
+                "org.gnome.Shell",
+                "/org/gnome/Shell",
+                "org.gnome.Shell.Extensions",
+                method,
+                GLib.Variant("(s)", (uuid,)),
+                reply,
+            )
+            print("%s: %s" % (method, answer), file=sys.stderr)
+        except GLib.Error as error:
+            print("%s failed: %s" % (method, error.message), file=sys.stderr)
     return 1
 
 
