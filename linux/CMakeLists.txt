@@ -8,6 +8,10 @@ set(BINARY_NAME "snipper")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
 set(APPLICATION_ID "com.alpinsuite.snipper")
+# The launcher entry's name, packaging/snipper.desktop without its extension.
+# The window has to carry it for the desktop to know which entry the window
+# belongs to; my_application.cc says why that matters here.
+set(DESKTOP_ID "snipper")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

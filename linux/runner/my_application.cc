@@ -141,11 +141,19 @@ static void my_application_class_init(MyApplicationClass* klass) {
 static void my_application_init(MyApplication* self) {}
 
 MyApplication* my_application_new() {
-  // Set the program name to the application ID, which helps various systems
-  // like GTK and desktop environments map this running application to its
-  // corresponding .desktop file. This ensures better integration by allowing
-  // the application to be recognized beyond its binary name.
-  g_set_prgname(APPLICATION_ID);
+  // The program name becomes the window's application ID under Wayland and its
+  // WM_CLASS under X11, which is how the desktop tells which launcher entry a
+  // window belongs to. So it is the entry's name, snipper.desktop, and not
+  // APPLICATION_ID as Flutter's template has it.
+  //
+  // That is more than cosmetic under GNOME. Its launcher starts an application
+  // in a systemd scope named after the entry — after the executable, for a
+  // keyboard shortcut, which is also "snipper" — and xdg-desktop-portal takes
+  // the application's identity from that scope. GNOME Shell will only ask the
+  // user whether an application may take screenshots when that identity is the
+  // focused window's entry. With the application ID here, the window belonged
+  // to no entry at all, and the question could never be asked.
+  g_set_prgname(DESKTOP_ID);
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
